@@ -1,0 +1,109 @@
+[project]
+name = "pcd-cli"
+version = "0.1.0"
+description = "Fast project navigator for Bash, Zsh and Fish"
+readme = { file = "README.txt", content-type = "text/plain" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "pcd-cli contributors" }]
+requires-python = ">=3.14,<4"
+keywords = ["cli", "cd", "projects", "navigation", "bash", "zsh", "fish"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "click>=8.4.2,<9",
+    "platformdirs>=4.10,<5",
+    "prompt-toolkit>=3.0.53,<4",
+    "tomlkit>=0.15.1,<1",
+]
+
+[project.scripts]
+pcd = "pcd_cli.cli:main"
+
+[build-system]
+requires = ["poetry-core==2.4.1"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "pcd_cli", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+mypy = "2.3.0"
+pre-commit = "4.6.2"
+pytest = "9.1.1"
+pytest-cov = "7.1.0"
+ruff = "0.16.3"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src", "tests", "benchmarks"]
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "I",
+    "UP",
+    "A",
+    "B",
+    "N",
+    "SIM",
+    "PERF",
+    "PIE",
+    "RUF",
+    "TC",
+    "TID",
+    "ANN",
+]
+
+[tool.ruff.lint.flake8-type-checking]
+strict = true
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.Any".msg = "Use precise types instead of Any."
+"typing.cast".msg = "Narrow types explicitly instead of using cast()."
+
+[tool.ruff.lint.isort]
+known-first-party = ["pcd_cli"]
+combine-as-imports = true
+order-by-type = false
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+files = ["src", "tests", "benchmarks"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["pcd_cli"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+]

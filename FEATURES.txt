@@ -1,0 +1,90 @@
+pcd FEATURES
+
+PROJECT NAVIGATION
+
+    Jump to a project by name:
+        pcd <project>
+
+    Open the interactive project picker:
+        pcd
+
+    Resolve a project whose name conflicts with a command:
+        pcd --project <project>
+
+
+PROJECT DISCOVERY
+
+    Register the current directory as a scan root:
+        pcd init
+
+    Remove the current directory from scan roots:
+        pcd uninit
+
+    List registered scan roots:
+        pcd roots
+
+    Rescan roots and rebuild the project cache:
+        pcd refresh
+
+    Projects inside registered roots are discovered automatically.
+
+
+MANUAL PROJECTS
+
+    Register a directory manually:
+        pcd add <path>
+
+    Remove a manually registered project:
+        pcd remove <project>
+
+
+PROJECT LIST
+
+    List all known projects:
+        pcd list
+
+
+CONFIGURATION
+
+    Print the user configuration file path:
+        pcd config-path
+
+
+SHELL INTEGRATION
+
+    Supported shells:
+        Bash
+        Zsh
+        Fish
+
+    Install shell integration automatically:
+        pcd shell install
+
+    Check shell integration status:
+        pcd shell status
+
+    Remove shell integration:
+        pcd shell uninstall
+
+    Print shell integration code:
+        pcd shell print <shell>
+
+    Shell integration can also be added manually to the shell config.
+
+
+CLI
+
+    Show version:
+        pcd --version
+
+    Show help:
+        pcd --help
+
+
+DEVELOPMENT
+
+    Poetry packaging
+    Ruff linting and formatting
+    mypy type checking
+    automated tests
+    wheel and source distribution builds

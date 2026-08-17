@@ -1,0 +1,155 @@
+name: Checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  POETRY_VERSION: "2.4.1"
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version-file: .python-version
+          check-latest: true
+
+      - name: Install Poetry
+        shell: bash
+        run: pipx install --python "$(command -v python)" "poetry==${POETRY_VERSION}"
+
+      - name: Select project Python
+        shell: bash
+        run: poetry env use "$(command -v python)"
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Check format
+        run: make format-check
+
+      - name: Lint
+        run: make lint
+
+      - name: Check types
+        run: make typecheck
+
+  tests:
+    name: Tests (${{ matrix.os }})
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version-file: .python-version
+          check-latest: true
+
+      - name: Install Poetry
+        shell: bash
+        run: pipx install --python "$(command -v python)" "poetry==${POETRY_VERSION}"
+
+      - name: Select project Python
+        shell: bash
+        run: poetry env use "$(command -v python)"
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Run tests
+        run: make cov
+
+  benchmarks:
+    name: Benchmarks
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version-file: .python-version
+          check-latest: true
+
+      - name: Install Poetry
+        shell: bash
+        run: pipx install --python "$(command -v python)" "poetry==${POETRY_VERSION}"
+
+      - name: Select project Python
+        shell: bash
+        run: poetry env use "$(command -v python)"
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Run benchmarks
+        run: make bench
+
+  package:
+    name: Package
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version-file: .python-version
+          check-latest: true
+
+      - name: Install Poetry
+        shell: bash
+        run: pipx install --python "$(command -v python)" "poetry==${POETRY_VERSION}"
+
+      - name: Build and smoke test
+        run: make build-check
+
+  container:
+    name: Container
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Build and smoke test image
+        run: make docker-check
