@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from textwrap import dedent
-from typing import Self
+from typing import Literal, Self
 
 from pcd_cli.filesystem import atomic_write, file_lock
 
@@ -160,9 +160,18 @@ def render_managed_block(shell: Shell) -> str:
     return f"{_MANAGED_BLOCK_START}\n{command}\n{_MANAGED_BLOCK_END}\n"
 
 
-def render_shell_integration(shell: Shell) -> str:
+def render_shell_integration(shell: Shell, direct_commands: tuple[str, ...] = ()) -> str:
     """Generate shell integration for directory changes and Click completion."""
-    return _fish() if shell is Shell.FISH else _posix(shell)
+    commands = tuple(sorted(set(direct_commands)))
+    match shell:
+        case Shell.FISH:
+            return _fish(commands)
+        case Shell.BASH:
+            return _posix("bash_source", commands)
+        case Shell.ZSH:
+            return _posix("zsh_source", commands)
+        case _:
+            raise ValueError(f"Unsupported shell: {shell}")
 
 
 def _integration_state(content: str, shell: Shell) -> ShellIntegrationState:
@@ -200,8 +209,8 @@ def _managed_block_bounds(content: str) -> tuple[int, int] | None:
     return start, end
 
 
-def _posix(shell: Shell) -> str:
-    completion = "bash_source" if shell is Shell.BASH else "zsh_source"
+def _posix(completion: Literal["bash_source", "zsh_source"], commands: tuple[str, ...]) -> str:
+    direct_patterns = "|".join(("-*", *commands))
     return dedent(
         f"""\
         pcd() {{
@@ -209,6 +218,18 @@ def _posix(shell: Shell) -> str:
                 command pcd "$@"
                 return $?
             fi
+
+            if [ "$#" -eq 0 ]; then
+                command pcd
+                return $?
+            fi
+            case "$1" in
+                --project|--project=*) : ;;
+                {direct_patterns})
+                    command pcd "$@"
+                    return $?
+                    ;;
+            esac
 
             local output code
             if output="$({SHELL_MODE_ENV}=1 command pcd "$@")"; then
@@ -234,13 +255,26 @@ def _posix(shell: Shell) -> str:
     )
 
 
-def _fish() -> str:
+def _fish(commands: tuple[str, ...]) -> str:
+    direct_patterns = " ".join(("'-*'", *commands))
     return dedent(
         f"""\
         function pcd
             if set -q _PCD_COMPLETE
                 command pcd $argv
                 return $status
+            end
+
+            if test (count $argv) -eq 0
+                command pcd
+                return $status
+            end
+            switch $argv[1]
+                case '--project' '--project=*'
+                    true
+                case {direct_patterns}
+                    command pcd $argv
+                    return $status
             end
 
             set -l output (env {SHELL_MODE_ENV}=1 command pcd $argv)

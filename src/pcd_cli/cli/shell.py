@@ -84,17 +84,22 @@ def uninstall_shell(shell: str | None) -> None:
     required=False,
     type=click.Choice([item.value for item in Shell], case_sensitive=False),
 )
-def print_shell_integration(shell: str | None) -> None:
+@click.pass_context
+def print_shell_integration(ctx: click.Context, shell: str | None) -> None:
     """Print shell integration for manual dotfile management."""
     selected = _selected_shell(shell)
-    click.echo(render_shell_integration(selected), nl=False)
+    click.echo(render_shell_integration(selected, _registered_command_names(ctx)), nl=False)
 
 
 @click.command("shell-init", hidden=True)
 @click.argument("shell", type=click.Choice([item.value for item in Shell], case_sensitive=False))
-def shell_init(shell: str) -> None:
+@click.pass_context
+def shell_init(ctx: click.Context, shell: str) -> None:
     """Backward-compatible alias for `pcd shell print`."""
-    click.echo(render_shell_integration(Shell(shell.casefold())), nl=False)
+    click.echo(
+        render_shell_integration(Shell(shell.casefold()), _registered_command_names(ctx)),
+        nl=False,
+    )
 
 
 def _shell_integration(shell: str | None) -> ShellIntegration:
@@ -109,3 +114,11 @@ def _selected_shell(shell: str | None) -> Shell:
         return detect_shell()
     except ShellIntegrationError as exc:
         raise click.UsageError(str(exc)) from exc
+
+
+def _registered_command_names(ctx: click.Context) -> tuple[str, ...]:
+    root = ctx.find_root()
+    if not isinstance(root.command, click.Group):
+        return ()
+
+    return tuple(root.command.list_commands(root))

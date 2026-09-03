@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import click
 import pytest
 
 from pcd_cli.cli import cli
@@ -51,6 +52,21 @@ def test_legacy_shell_init_remains_available(runner: CliRunner) -> None:
 
     assert result.exit_code == 0
     assert "zsh_source" in result.output
+
+
+@pytest.mark.parametrize("shell", list(Shell))
+def test_shell_wrapper_uses_registered_root_commands(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    shell: Shell,
+) -> None:
+    commands = {**cli.commands, "interactive": click.Command("interactive")}
+    monkeypatch.setattr(cli, "commands", commands)
+
+    result = runner.invoke(cli, ["shell", "print", shell.value])
+
+    assert result.exit_code == 0
+    assert "interactive" in result.output
 
 
 def test_shell_install_detects_zsh_and_is_idempotent(
@@ -223,6 +239,17 @@ if [ \"${1:-}\" = jump ]; then
     printf '%s\\n' \"$PCD_TEST_TARGET\"
     exit 10
 fi
+if [ \"${1:-}\" = --project=jump ]; then
+    printf '%s\\n' \"$PCD_TEST_TARGET\"
+    exit 10
+fi
+if [ \"${1:-}\" = config ]; then
+    if [ \"${PCD_SHELL:-}\" = 1 ]; then
+        exit 99
+    fi
+    printf '%s\\n' 'config-output'
+    exit 0
+fi
 printf '%s\\n' '__PCD_CD__:ordinary-output'
 """,
         encoding="utf-8",
@@ -230,13 +257,18 @@ printf '%s\\n' '__PCD_CD__:ordinary-output'
     executable.chmod(0o755)
 
     integration = tmp_path / "pcd.bash"
-    integration.write_text(render_shell_integration(Shell.BASH), encoding="utf-8")
+    integration.write_text(
+        render_shell_integration(Shell.BASH, ("config",)),
+        encoding="utf-8",
+    )
     environment = os.environ.copy()
     environment["PATH"] = f"{binary_dir}{os.pathsep}{environment['PATH']}"
     environment["PCD_TEST_TARGET"] = str(target)
 
     command = (
-        'set -e; source "$1"; pcd jump; printf "cwd=%s\\n" "$PWD"; pcd marker; printf "alive\\n"'
+        'set -e; source "$1"; pcd jump; printf "cwd=%s\\n" "$PWD"; '
+        'pcd config edit; pcd marker; pcd --project=jump; printf "cwd-option=%s\\n" "$PWD"; '
+        'printf "alive\\n"'
     )
     result = subprocess.run(
         ["bash", "-c", command, "bash", str(integration)],
@@ -247,5 +279,7 @@ printf '%s\\n' '__PCD_CD__:ordinary-output'
     )
 
     assert result.returncode == 0
-    assert result.stdout == f"cwd={target}\n__PCD_CD__:ordinary-output\nalive\n"
+    assert result.stdout == (
+        f"cwd={target}\nconfig-output\n__PCD_CD__:ordinary-output\ncwd-option={target}\nalive\n"
+    )
     assert result.stderr == ""
