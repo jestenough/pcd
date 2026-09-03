@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from importlib.metadata import PackageNotFoundError
 from typing import TYPE_CHECKING
 

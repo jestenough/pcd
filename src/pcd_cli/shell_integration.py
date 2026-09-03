@@ -133,7 +133,7 @@ def inactive_shell_message() -> str:
     try:
         integration = ShellIntegration.detect()
         state = integration.state()
-    except OSError, ShellIntegrationError:
+    except (OSError, ShellIntegrationError):
         return (
             "Shell integration is not active, so pcd cannot change this shell's directory. "
             "If you have not configured it manually, run: pcd shell install"

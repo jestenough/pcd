@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict, TypeIs
+from typing import TYPE_CHECKING, TypedDict, TypeGuard
 
 from pcd_cli.filesystem import atomic_write, file_lock
 from pcd_cli.models import Project, ProjectSource
@@ -92,7 +94,7 @@ class ProjectCache:
             raise _CacheReadError("Cannot read cache") from exc
 
 
-def _is_cache_entry(value: object) -> TypeIs[ProjectCacheEntry]:
+def _is_cache_entry(value: object) -> TypeGuard[ProjectCacheEntry]:
     if not isinstance(value, dict):
         return False
 
