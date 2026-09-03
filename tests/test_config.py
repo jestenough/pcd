@@ -20,6 +20,14 @@ def test_defaults(projects: ProjectCatalog) -> None:
     assert settings.include_hidden is True
     assert settings.follow_symlinks is False
     assert "node_modules" in settings.excluded_names
+    assert settings.editor is None
+
+
+def test_reads_editor_setting(projects: ProjectCatalog) -> None:
+    projects.config.path.parent.mkdir(parents=True)
+    projects.config.path.write_text('editor = "nvim --clean"\n', encoding="utf-8")
+
+    assert projects.config.load().editor == "nvim --clean"
 
 
 def test_add_and_remove_root(projects: ProjectCatalog, tmp_path: Path) -> None:

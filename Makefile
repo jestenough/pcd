@@ -13,6 +13,7 @@
 	build \
 	smoke \
 	build-check \
+	release-check \
 	docker \
 	docker-check \
 	clean
@@ -55,6 +56,7 @@ bench:
 	poetry run pytest benchmarks -q -s
 
 build:
+	rm -rf dist
 	poetry build
 
 smoke:
@@ -66,6 +68,8 @@ smoke:
 	rm -rf .smoke
 
 build-check: build smoke
+
+release-check: check build-check
 
 docker:
 	docker build --tag pcd-cli:local .

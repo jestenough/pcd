@@ -47,7 +47,14 @@ PROJECT LIST
 CONFIGURATION
 
     Print the user configuration file path:
-        pcd config-path
+        pcd config path
+
+    Print, edit, or validate the user configuration:
+        pcd config show
+        pcd config edit
+        pcd config validate
+
+    Set `editor = "nvim"` in the configuration to choose an editor for editing.
 
 
 SHELL INTEGRATION
