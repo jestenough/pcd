@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeIs
+from typing import TYPE_CHECKING, TypeGuard
 
 import tomlkit
 
@@ -210,7 +212,7 @@ def _table(value: object, message: str) -> Mapping[str, object]:
     return value
 
 
-def _is_table(value: object) -> TypeIs[Mapping[str, object]]:
+def _is_table(value: object) -> TypeGuard[Mapping[str, object]]:
     return isinstance(value, dict) and all(isinstance(key, str) for key in value)
 
 

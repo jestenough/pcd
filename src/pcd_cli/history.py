@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict, TypeIs
+from typing import TypedDict, TypeGuard
 
 from pcd_cli.filesystem import atomic_write, file_lock
 from pcd_cli.models import ProjectUsage
@@ -29,7 +31,7 @@ class UsageHistory:
         try:
             with self.path.open(encoding="utf-8") as stream:
                 raw: object = json.load(stream)
-        except OSError, UnicodeError, json.JSONDecodeError:
+        except (OSError, UnicodeError, json.JSONDecodeError):
             return {}
 
         return _decode_usage(raw)
@@ -61,13 +63,13 @@ def _decode_usage(value: object) -> dict[Path, ProjectUsage]:
     }
 
 
-def _is_usage_mapping(value: object) -> TypeIs[dict[str, UsageHistoryEntry]]:
+def _is_usage_mapping(value: object) -> TypeGuard[dict[str, UsageHistoryEntry]]:
     return isinstance(value, dict) and all(
         isinstance(path, str) and _is_usage_entry(entry) for path, entry in value.items()
     )
 
 
-def _is_usage_entry(value: object) -> TypeIs[UsageHistoryEntry]:
+def _is_usage_entry(value: object) -> TypeGuard[UsageHistoryEntry]:
     if not isinstance(value, dict):
         return False
 

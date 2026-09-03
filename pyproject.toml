@@ -6,7 +6,7 @@ readme = { file = "README.txt", content-type = "text/plain" }
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "pcd-cli contributors" }]
-requires-python = ">=3.14,<4"
+requires-python = ">=3.12,<4"
 keywords = ["cli", "cd", "projects", "navigation", "bash", "zsh", "fish"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -14,6 +14,8 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Utilities",
 ]
@@ -42,7 +44,7 @@ pytest-cov = "7.1.0"
 ruff = "0.16.3"
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py312"
 line-length = 100
 src = ["src", "tests", "benchmarks"]
 
@@ -85,7 +87,7 @@ line-ending = "lf"
 docstring-code-format = true
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 show_error_codes = true

@@ -16,7 +16,9 @@ Supported shells:
 
 INSTALL
 -------
-    pipx install --python python3.14 git+https://github.com/jestenough/pcd.git
+Requires Python 3.12 or newer.
+
+    pipx install git+https://github.com/jestenough/pcd.git
     pcd shell install
 Restart your shell after installing shell integration.
 

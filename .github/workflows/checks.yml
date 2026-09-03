@@ -54,7 +54,7 @@ jobs:
         run: make typecheck
 
   tests:
-    name: Tests (${{ matrix.os }})
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
     needs: quality
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -62,7 +62,15 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            python: "3.12"
+          - os: ubuntu-latest
+            python: "3.13"
+          - os: ubuntu-latest
+            python: "3.14"
+          - os: macos-latest
+            python: "3.14"
 
     steps:
       - name: Checkout
@@ -71,7 +79,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
         with:
-          python-version-file: .python-version
+          python-version: ${{ matrix.python }}
           check-latest: true
 
       - name: Install Poetry
