@@ -44,7 +44,10 @@ COMMANDS
     pcd refresh                  Rescan roots and rebuild the project cache
 
     pcd list                     List all known projects
-    pcd config-path              Print the configuration file path
+    pcd config path              Print the configuration file path
+    pcd config show              Print the effective configuration
+    pcd config edit              Edit the user configuration
+    pcd config validate          Validate the user configuration
 
     pcd shell install            Install shell integration
     pcd shell status             Show shell integration status
@@ -56,6 +59,7 @@ COMMANDS
 
 * Projects inside registered roots are discovered automatically.
 * You can register multiple scan roots.
+* Set `editor = "nvim"` in the configuration to choose an editor for `pcd config edit`.
 
 
 DEVELOPMENT

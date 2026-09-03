@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
     from tomlkit import TOMLDocument
 
-ROOT_KEYS = frozenset({"roots", "scan", "projects"})
+ROOT_KEYS = frozenset({"roots", "scan", "projects", "editor"})
 SCAN_KEYS = frozenset({"hidden", "follow_symlinks", "exclude"})
 PROJECT_KEYS = frozenset({"name", "path"})
 
@@ -41,6 +41,25 @@ class Config:
 
     def load(self) -> ProjectSettings:
         return _decode_settings(self._read().unwrap())
+
+    def effective_toml(self) -> str:
+        settings = self.load()
+        document = _default_document()
+        document["roots"] = [str(item) for item in settings.roots]
+        document["scan"]["hidden"] = settings.include_hidden
+        document["scan"]["follow_symlinks"] = settings.follow_symlinks
+        document["scan"]["exclude"] = sorted(settings.excluded_names)
+        if settings.editor is not None:
+            document["editor"] = settings.editor
+        document["projects"] = [
+            {"name": item.name, "path": str(item.display_path)} for item in settings.manual_projects
+        ]
+        return tomlkit.dumps(document)
+
+    def ensure_exists(self) -> None:
+        with file_lock(self.path):
+            if not self.path.exists():
+                self._write(_default_document())
 
     def add_root(self, root: Path) -> bool:
         display_path = root.expanduser()
@@ -107,11 +126,14 @@ class Config:
         if not self.path.is_file():
             return _default_document()
 
-        text = self.path.read_text(encoding="utf-8")
+        try:
+            text = self.path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise InvalidConfigError(f"Config is not valid UTF-8: {self.path}") from exc
         try:
             return tomlkit.parse(text)
         except tomlkit.exceptions.ParseError as exc:
-            raise InvalidConfigError(f"Invalid TOML in {self.path}") from exc
+            raise InvalidConfigError(f"Invalid TOML in {self.path}: {exc}") from exc
 
     def _write(self, document: TOMLDocument) -> None:
         with atomic_write(self.path) as stream:
@@ -152,6 +174,7 @@ def _decode_settings(value: object) -> ProjectSettings:
             "scan.exclude",
         )
     )
+    editor = _text(config["editor"], "editor") if "editor" in config else None
 
     if len({canonical_path(root) for root in roots}) != len(roots):
         raise InvalidConfigError("Config contains duplicate roots")
@@ -164,6 +187,7 @@ def _decode_settings(value: object) -> ProjectSettings:
         include_hidden=include_hidden,
         follow_symlinks=follow_symlinks,
         excluded_names=excluded_names,
+        editor=editor,
     )
 
 

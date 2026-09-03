@@ -112,12 +112,13 @@ Planned commands:
 
 Requirements:
 
-- [ ] `config path` prints the active user configuration path.
-- [ ] `config show` prints the effective user configuration.
-- [ ] `config edit` uses `$VISUAL`, then `$EDITOR`.
-- [ ] Do not silently choose an editor if neither variable is configured.
-- [ ] `config validate` reports precise validation errors.
-- [ ] Keep routine operations available as dedicated commands rather than forcing users to edit the config manually.
+- [x] `config path` prints the active user configuration path.
+- [x] `config show` prints the effective user configuration.
+- [x] `config edit` uses the configured editor, then `$VISUAL`, then `$EDITOR`.
+- [x] Allow `config edit` to use a per-user editor configured in `config.toml`.
+- [x] Do not silently choose an editor if neither variable is configured.
+- [x] `config validate` reports precise validation errors.
+- [x] Keep routine operations available as dedicated commands rather than forcing users to edit the config manually.
 
 ## Shell integration
 

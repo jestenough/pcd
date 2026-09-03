@@ -31,6 +31,7 @@ class ProjectSettings:
     include_hidden: bool
     follow_symlinks: bool
     excluded_names: frozenset[str]
+    editor: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

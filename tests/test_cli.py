@@ -50,7 +50,7 @@ def test_version_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     def missing(_name: str) -> str:
         raise PackageNotFoundError
 
-    monkeypatch.setattr("pcd_cli.cli.metadata.version", missing)
+    monkeypatch.setattr("pcd_cli.cli.app.metadata.version", missing)
     assert cli_module.package_version() == "0+unknown"
 
 
