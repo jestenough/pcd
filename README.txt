@@ -81,8 +81,5 @@ SEE ALSO
     Planned changes:
         ROADMAP.md
 
-    Changelog:
-        CHANGELOG.md
-
     License:
         MIT
