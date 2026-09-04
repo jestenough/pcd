@@ -8,7 +8,6 @@ NEXT
 ----
 
 CLI
-    Improve `pcd list` output with aligned columns and clearer status.
     Add filters: `--manual`, `--discovered`, and `--missing`.
     Add `pcd list --json`.
     Improve `pcd roots` output with project counts and root status.
@@ -95,3 +94,10 @@ OUTPUT AND TOOLING
     Add additional list sorting modes.
     Add optional helpers for creating groups from matching project names.
     Complete release automation and PyPI publishing.
+
+FUTURE INTEGRATIONS
+    Add optional tmux integration.
+    Add IDE and editor plugins.
+    Add direnv integration.
+    Add import and interoperability with zoxide.
+    Add desktop launcher integration.
