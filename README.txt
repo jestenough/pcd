@@ -79,7 +79,7 @@ SEE ALSO
         FEATURES.txt
 
     Planned changes:
-        ROADMAP.md
+        ROADMAP.txt
 
     License:
         MIT

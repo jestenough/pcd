@@ -1,0 +1,97 @@
+PCD ROADMAP
+===========
+
+The roadmap is grouped by priority rather than by implementation area.
+
+
+NEXT
+----
+
+CLI
+    Improve `pcd list` output with aligned columns and clearer status.
+    Add filters: `--manual`, `--discovered`, and `--missing`.
+    Add `pcd list --json`.
+    Improve `pcd roots` output with project counts and root status.
+    Keep `pcd` with no arguments equivalent to showing help.
+    Add `pcd info <project>` with project metadata and status.
+    Handle duplicate project names explicitly.
+
+SHELL INTEGRATION
+    Improve `pcd shell status` formatting.
+    Give a useful reload hint after installation.
+    Test Bash, Zsh, and Fish independently.
+    Consider renaming `pcd shell print <shell>` to `pcd shell init <shell>`.
+
+COMPLETION
+    Complete project names for `pcd <project>`.
+    Complete appropriate project names for `remove` and `info`.
+
+DOCTOR
+    Add `pcd doctor`.
+    Check configuration, cache, scan roots, missing projects, and PATH.
+    Check shell integration when detectable.
+
+
+PLANNED
+-------
+
+ALIASES
+    Add:
+        pcd alias add <project> --as <alias>
+        pcd alias remove <alias>
+        pcd alias list
+
+    Aliases reference concrete project paths and survive `pcd refresh`.
+    Detect conflicts with commands, projects, groups, and other aliases.
+    Show aliases in `pcd list` and `pcd info`.
+    Report stale aliases in `pcd doctor`.
+    Complete aliases in relevant commands.
+
+GROUPS
+    Add:
+        pcd group create <group>
+        pcd group add <group> <project> [--as <member-name>]
+        pcd group remove <group> <member-name>
+        pcd group delete <group>
+        pcd group list
+        pcd group show <group>
+
+    Groups use local member names and reference concrete project paths.
+    They do not depend on parent directory names and survive `pcd refresh`.
+    The same member name may exist in different groups.
+    Group and project conflicts must have deterministic resolution.
+    `--project` remains available for explicit disambiguation.
+
+    Navigation:
+        pcd <group>
+        pcd <group>/<member-name>
+
+    Complete group names and group members.
+    Show groups in `pcd list` and `pcd info`.
+    Report missing group members in `pcd doctor`.
+
+REFRESH AND STALE DATA
+    Rebuild discovered projects without deleting user configuration.
+    Preserve manual projects, aliases, and groups during refresh.
+    Remove missing discovered projects from the rebuilt cache.
+    Report stale user-defined references instead of silently deleting them.
+
+
+LATER
+-----
+
+FRECENCY
+    Track project usage count and last-used time.
+    Prefer recently and frequently used projects in the picker.
+    Keep history lightweight and bounded.
+    Do not affect deterministic exact-name resolution.
+
+SHELLS
+    Keep automatic installation optional; manual configuration remains supported.
+    Add Nushell support.
+
+OUTPUT AND TOOLING
+    Add more machine-readable output where useful.
+    Add additional list sorting modes.
+    Add optional helpers for creating groups from matching project names.
+    Complete release automation and PyPI publishing.
