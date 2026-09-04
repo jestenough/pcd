@@ -1,6 +1,6 @@
 [project]
 name = "pcd-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "Fast project navigator for Bash, Zsh and Fish"
 readme = { file = "README.txt", content-type = "text/plain" }
 license = "MIT"
