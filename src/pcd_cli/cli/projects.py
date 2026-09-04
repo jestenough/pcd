@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import assert_never, ClassVar, Literal, NamedTuple, TYPE_CHECKING
 
 import click
 
@@ -10,7 +10,73 @@ from pcd_cli.models import ExitCode, Project, ProjectSource
 from pcd_cli.navigation import navigate_to_project, project_completions, select_project
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pcd_cli.catalog import ProjectCatalog
+
+type ProjectSourceLabel = Literal["manual", "scanned"]
+type ProjectStatusLabel = Literal["available", "missing"]
+
+
+class ProjectListRow(NamedTuple):
+    name: str
+    path: str
+    source: ProjectSourceLabel
+    status: ProjectStatusLabel
+
+    @classmethod
+    def from_project(cls, project: Project) -> ProjectListRow:
+        return cls(
+            name=project.name,
+            path=format_path(project.display_path),
+            source=cls._source_label(project.source),
+            status=cls._status_label(project.path),
+        )
+
+    @staticmethod
+    def _source_label(source: ProjectSource) -> ProjectSourceLabel:
+        match source:
+            case ProjectSource.DISCOVERED:
+                return "scanned"
+            case ProjectSource.MANUAL:
+                return "manual"
+            case _:
+                assert_never(source)
+
+    @staticmethod
+    def _status_label(path: Path) -> ProjectStatusLabel:
+        if path.is_dir():
+            return "available"
+        else:
+            return "missing"
+
+
+class ProjectListTable:
+    HEADERS: ClassVar[tuple[str, str, str, str]] = ("NAME", "PATH", "SOURCE", "STATUS")
+
+    _rows: tuple[ProjectListRow, ...]
+
+    def __init__(self, projects: Sequence[Project]) -> None:
+        self._rows = tuple(ProjectListRow.from_project(project) for project in projects)
+
+    def render(self) -> str:
+        if self._rows:
+            return self._render_table()
+        else:
+            return "No projects found."
+
+    def _render_table(self) -> str:
+        table = (self.HEADERS, *self._rows)
+        columns = zip(*table, strict=True)
+        widths = tuple(max(len(value) for value in column) for column in columns)
+
+        return "\n".join(self._render_row(row, widths) for row in table)
+
+    @staticmethod
+    def _render_row(row: tuple[str, ...], widths: tuple[int, ...]) -> str:
+        return "  ".join(
+            value.ljust(width) for value, width in zip(row, widths, strict=True)
+        ).rstrip()
 
 
 @click.command(hidden=True)
@@ -101,7 +167,7 @@ def remove(catalog: ProjectCatalog, query: str) -> None:
         click.echo(f"Project not found: {query}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
-    selected = matches[0] if len(matches) == 1 else select_project(catalog, matches, query)
+    selected = select_project(catalog, matches, query)
     if selected is None:
         return
 
@@ -124,17 +190,8 @@ def remove(catalog: ProjectCatalog, query: str) -> None:
 @click.pass_obj
 def list_projects(catalog: ProjectCatalog) -> None:
     """List all known projects."""
-    projects = catalog.projects()
-    if not projects:
-        click.echo("No projects found.")
-        return
-
-    name_width = max(len(project.name) for project in projects)
-    for item in projects:
-        status = "ok" if item.path.is_dir() else "missing"
-        click.echo(
-            f"{item.name:<{name_width}}  {format_path(item.display_path)}  {item.source.value:<10}  {status}"
-        )
+    table = ProjectListTable(catalog.projects())
+    click.echo(table.render())
 
 
 @click.command()

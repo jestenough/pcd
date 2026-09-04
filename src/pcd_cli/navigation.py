@@ -31,7 +31,7 @@ def navigate_to_project(
         click.echo(f"Project not found{suffix}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
-    selected = matches[0] if len(matches) == 1 else select_project(catalog, matches, query or "")
+    selected = select_project(catalog, matches, query or "")
     if selected is not None:
         _open_project(catalog, selected)
 
@@ -41,10 +41,13 @@ def select_project(
     projects: Sequence[Project],
     query: str = "",
 ) -> Project | None:
-    # Import lazily so shell completion never initializes terminal UI machinery.
-    from pcd_cli.picker import ProjectPicker
+    if len(projects) == 1:
+        return projects[0]
+    else:
+        # Import lazily so shell completion never initializes terminal UI machinery.
+        from pcd_cli.picker import ProjectPicker
 
-    return ProjectPicker(projects, catalog.history.load(), query).run()
+        return ProjectPicker(projects, catalog.history.load(), query).run()
 
 
 def project_completions(value: str) -> list[CompletionItem]:

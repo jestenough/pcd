@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
+import pcd_cli.cli.projects as projects_module
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.models import Project, ProjectSource
@@ -75,6 +76,47 @@ def test_remove_discovered_is_rejected(
 
     assert result.exit_code == 1
     assert "discovered automatically" in result.output
+
+
+def test_remove_missing_project(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["remove", "missing"])
+
+    assert result.exit_code == 3
+    assert "Project not found: missing" in result.output
+
+
+def test_remove_cancelled_selection(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("first", "second"):
+        path = tmp_path / name
+        path.mkdir()
+        assert runner.invoke(cli, ["add", str(path), "--name", "same"]).exit_code == 0
+
+    monkeypatch.setattr(projects_module, "select_project", lambda *_args: None)
+
+    result = runner.invoke(cli, ["remove", "same"])
+
+    assert result.exit_code == 0
+    assert len(ProjectCatalog.create().config.load().manual_projects) == 2
+
+
+def test_remove_handles_disappeared_registration(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "repo"
+    path.mkdir()
+    assert runner.invoke(cli, ["add", str(path)]).exit_code == 0
+    monkeypatch.setattr(ProjectCatalog, "remove_project", lambda _catalog, _path: False)
+
+    result = runner.invoke(cli, ["remove", "repo"])
+
+    assert result.exit_code == 1
+    assert "Project is no longer registered" in result.output
 
 
 def test_roots_and_refresh_commands(

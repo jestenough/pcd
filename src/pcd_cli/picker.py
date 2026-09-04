@@ -139,4 +139,5 @@ class ProjectPicker:
 
         if len(self.matches) > PAGE_SIZE:
             lines.append(("dim", f"\n{self.selected_index + 1}/{len(self.matches)}\n"))
+
         return lines
