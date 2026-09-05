@@ -8,6 +8,7 @@ import click
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli.config import config_commands
 from pcd_cli.cli.projects import project_commands
+from pcd_cli.cli.roots import root_commands
 from pcd_cli.cli.shell import shell_commands, shell_init
 from pcd_cli.config import InvalidConfigError
 from pcd_cli.models import ExitCode
@@ -85,6 +86,7 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
 
 for command in (
     *project_commands,
+    *root_commands,
     config_commands,
     shell_commands,
     shell_init,

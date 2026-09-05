@@ -88,37 +88,6 @@ def project(catalog: ProjectCatalog, query: str) -> None:
 
 
 @click.command()
-@click.pass_obj
-def init(catalog: ProjectCatalog) -> None:
-    """Register the current directory as a scan root."""
-    current = Path.cwd()
-    parent = catalog.find_parent_root(current)
-    added = catalog.add_scan_root(current)
-
-    if not added:
-        click.echo(f"Already a root: {format_path(current)}")
-        return
-
-    if parent is not None:
-        click.echo(f"Note: root is inside {format_path(parent)}", err=True)
-
-    click.echo(f"Added root: {format_path(current)}")
-
-
-@click.command()
-@click.pass_obj
-def uninit(catalog: ProjectCatalog) -> None:
-    """Remove the current directory from scan roots."""
-    current = Path.cwd()
-    if catalog.remove_scan_root(current):
-        click.echo(f"Removed root: {format_path(current)}")
-        return
-
-    click.echo("Current directory is not a pcd root.", err=True)
-    raise click.exceptions.Exit(ExitCode.ERROR)
-
-
-@click.command()
 @click.argument("path", type=click.Path(path_type=Path, file_okay=False), required=False)
 @click.option("--name", help="Custom name for a manual project.")
 @click.pass_obj
@@ -194,19 +163,4 @@ def list_projects(catalog: ProjectCatalog) -> None:
     click.echo(table.render())
 
 
-@click.command()
-@click.pass_obj
-def roots(catalog: ProjectCatalog) -> None:
-    """List registered scan roots."""
-    for root in catalog.config.load().roots:
-        click.echo(format_path(root))
-
-
-@click.command()
-@click.pass_obj
-def refresh(catalog: ProjectCatalog) -> None:
-    """Rescan roots and rebuild the project cache."""
-    click.echo(f"Found {len(catalog.refresh())} projects.")
-
-
-project_commands = (project, init, uninit, add, remove, list_projects, roots, refresh)
+project_commands = (project, add, remove, list_projects)
