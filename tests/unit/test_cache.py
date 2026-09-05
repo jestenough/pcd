@@ -70,3 +70,10 @@ def test_cache_prefix_does_not_return_partial_data_from_corrupt_cache(tmp_path: 
     )
 
     assert cache.find_prefix("re") is None
+
+
+def test_cache_ignores_invalid_utf8(tmp_path: Path) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    cache.path.write_bytes(b"\xff")
+
+    assert cache.load() is None

@@ -32,6 +32,13 @@ def test_reads_editor_setting(projects: ProjectCatalog) -> None:
     assert projects.config.load().editor == "nvim --clean"
 
 
+def test_effective_config_includes_editor(projects: ProjectCatalog) -> None:
+    projects.config.path.parent.mkdir(parents=True)
+    projects.config.path.write_text('editor = "nvim --clean"\n', encoding="utf-8")
+
+    assert 'editor = "nvim --clean"' in projects.config.effective_toml()
+
+
 def test_add_and_remove_root(projects: ProjectCatalog, tmp_path: Path) -> None:
     root = tmp_path / "projects"
     root.mkdir()
@@ -161,6 +168,14 @@ def test_unknown_home_directory_is_invalid_config(projects: ProjectCatalog) -> N
     )
 
     with pytest.raises(InvalidConfigError, match="unknown home directory"):
+        projects.config.load()
+
+
+def test_invalid_utf8_config(projects: ProjectCatalog) -> None:
+    projects.config.path.parent.mkdir(parents=True)
+    projects.config.path.write_bytes(b"\xff")
+
+    with pytest.raises(InvalidConfigError, match="not valid UTF-8"):
         projects.config.load()
 
 

@@ -56,6 +56,15 @@ def test_history_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert set(history.load()) == {Path("/two"), Path("/three")}
 
 
+@pytest.mark.parametrize("limit", [0, -1])
+def test_non_positive_history_limit_discards_entries(tmp_path: Path, limit: int) -> None:
+    history = UsageHistory(tmp_path / "history.json", limit=limit)
+
+    history.record(Path("/repo"))
+
+    assert history.load() == {}
+
+
 def test_history_trims_existing_data_to_new_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

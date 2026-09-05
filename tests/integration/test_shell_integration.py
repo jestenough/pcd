@@ -9,7 +9,9 @@ import click
 import pytest
 
 from pcd_cli.cli import cli
+from pcd_cli.cli.shell import shell_init
 from pcd_cli.shell_integration import (
+    inactive_shell_message,
     render_shell_integration,
     Shell,
     ShellIntegration,
@@ -54,6 +56,13 @@ def test_legacy_shell_init_remains_available(runner: CliRunner) -> None:
     assert "zsh_source" in result.output
 
 
+def test_legacy_shell_init_can_render_as_standalone_command(runner: CliRunner) -> None:
+    result = runner.invoke(shell_init, ["bash"])
+
+    assert result.exit_code == 0
+    assert "bash_source" in result.output
+
+
 @pytest.mark.parametrize("shell", list(Shell))
 def test_shell_wrapper_uses_registered_root_commands(
     runner: CliRunner,
@@ -67,6 +76,11 @@ def test_shell_wrapper_uses_registered_root_commands(
 
     assert result.exit_code == 0
     assert "interactive" in result.output
+
+
+def test_render_rejects_unsupported_shell() -> None:
+    with pytest.raises(ValueError, match="Unsupported shell"):
+        render_shell_integration("powershell")  # type: ignore[arg-type]
 
 
 def test_shell_install_detects_zsh_and_is_idempotent(
@@ -138,6 +152,13 @@ def test_shell_uninstall_does_not_remove_manual_configuration(
     assert result.exit_code == 0
     assert "managed manually; left unchanged" in result.output
     assert config.read_text(encoding="utf-8") == manual
+
+
+def test_shell_uninstall_reports_absent_integration(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["shell", "uninstall", "bash"])
+
+    assert result.exit_code == 0
+    assert "not installed" in result.output
 
 
 def test_shell_status_reports_configuration_and_activation(
@@ -213,6 +234,45 @@ def test_invalid_managed_block_is_rejected(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(ShellIntegrationError):
         ShellIntegration.detect().state()
+
+
+def test_reversed_managed_block_is_rejected() -> None:
+    integration = ShellIntegration.for_shell(Shell.BASH)
+    integration.config_path.write_text(
+        "# <<< pcd shell integration <<<\n# >>> pcd shell integration >>>\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ShellIntegrationError, match="invalid pcd-managed"):
+        integration.state()
+
+
+def test_shell_config_rejects_invalid_utf8() -> None:
+    integration = ShellIntegration.for_shell(Shell.BASH)
+    integration.config_path.write_bytes(b"\xff")
+
+    with pytest.raises(ShellIntegrationError, match="not valid UTF-8"):
+        integration.state()
+
+
+def test_uninstall_handles_managed_block_at_end_of_file() -> None:
+    integration = ShellIntegration.for_shell(Shell.BASH)
+    integration.config_path.write_text(
+        "keep\n# >>> pcd shell integration >>>\npcd\n# <<< pcd shell integration <<<",
+        encoding="utf-8",
+    )
+
+    assert integration.uninstall() is True
+    assert integration.config_path.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_inactive_shell_message_handles_detection_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SHELL", "/bin/unsupported")
+
+    message = inactive_shell_message()
+
+    assert "Shell integration is not active" in message
+    assert "pcd shell install" in message
 
 
 def test_shell_integration_state_detects_manual_and_absent() -> None:

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.document import Document
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
@@ -72,6 +74,30 @@ def test_render_paginates_long_list() -> None:
     lines = picker._render()
 
     assert any("16/20" in fragment[1] for fragment in lines)
+
+
+def test_render_uses_first_full_page() -> None:
+    projects = tuple(project(f"project-{index}") for index in range(20))
+    picker = ProjectPicker(projects, {})
+    picker.matches = list(projects)
+    picker.selected_index = 2
+
+    output = "".join(fragment[1] for fragment in picker._render())
+
+    assert "project-0" in output
+    assert "project-11" in output
+    assert "project-12" not in output
+
+
+def test_filter_without_running_application() -> None:
+    projects = (project("alpha"), project("beta"))
+    picker = ProjectPicker(projects, {})
+    picker.matches = list(projects)
+
+    picker._filter(Buffer(document=Document("beta")))
+
+    assert picker.matches == [projects[1]]
+    assert picker.selected_index == 0
 
 
 def test_render_empty_results() -> None:

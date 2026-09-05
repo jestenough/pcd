@@ -40,8 +40,8 @@ def edit_config(catalog: ProjectCatalog) -> None:
         editor = catalog.config.load().editor
     except InvalidConfigError:
         editor = None
-    else:
-        editor = editor or os.environ.get("VISUAL") or os.environ.get("EDITOR")
+
+    editor = editor or os.environ.get("VISUAL") or os.environ.get("EDITOR")
 
     if editor is None:
         raise click.UsageError("Set $VISUAL or $EDITOR before running `pcd config edit`")

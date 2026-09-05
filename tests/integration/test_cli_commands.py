@@ -323,6 +323,69 @@ def test_config_edit_requires_configured_editor(
     assert "$VISUAL or $EDITOR" in result.output
 
 
+def test_config_edit_falls_back_to_environment_for_invalid_config(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = ProjectCatalog.create().config
+    config.path.parent.mkdir(parents=True)
+    config.path.write_text("roots = [", encoding="utf-8")
+    monkeypatch.setenv("EDITOR", "nano")
+    calls: list[list[str]] = []
+
+    def run_editor(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr("pcd_cli.cli.config.subprocess.run", run_editor)
+
+    result = runner.invoke(cli, ["config", "edit"])
+
+    assert result.exit_code == 0
+    assert calls == [["nano", str(config.path)]]
+
+
+def test_config_edit_rejects_invalid_editor_command(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EDITOR", "'")
+
+    result = runner.invoke(cli, ["config", "edit"])
+
+    assert result.exit_code == 2
+    assert "Invalid editor command" in result.output
+
+
+def test_config_edit_rejects_empty_editor_command(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EDITOR", "   ")
+
+    result = runner.invoke(cli, ["config", "edit"])
+
+    assert result.exit_code == 2
+    assert "$VISUAL or $EDITOR" in result.output
+
+
+def test_config_edit_reports_editor_failure(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EDITOR", "nano")
+
+    def run_editor(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 7)
+
+    monkeypatch.setattr("pcd_cli.cli.config.subprocess.run", run_editor)
+
+    result = runner.invoke(cli, ["config", "edit"])
+
+    assert result.exit_code == 1
+    assert "Editor exited with status 7" in result.output
+
+
 def test_config_validate_reports_precise_error(runner: CliRunner) -> None:
     config = ProjectCatalog.create().config
     config.path.parent.mkdir(parents=True)

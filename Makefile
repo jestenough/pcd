@@ -7,6 +7,9 @@
 	typecheck \
 	quality \
 	test \
+	test-unit \
+	test-integration \
+	test-e2e \
 	cov \
 	check \
 	bench \
@@ -41,6 +44,15 @@ quality: format-check lint typecheck
 
 test:
 	poetry run pytest
+
+test-unit:
+	poetry run pytest tests/unit
+
+test-integration:
+	poetry run pytest tests/integration
+
+test-e2e:
+	poetry run pytest tests/e2e
 
 cov:
 	poetry run pytest \
