@@ -125,15 +125,19 @@ def test_roots_and_refresh_commands(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "root"
-    root.mkdir()
+    (root / "repo" / ".git").mkdir(parents=True)
     monkeypatch.chdir(root)
     assert runner.invoke(cli, ["init"]).exit_code == 0
 
     roots = runner.invoke(cli, ["roots"])
     refreshed = runner.invoke(cli, ["refresh"])
 
+    assert "PATH" in roots.output
+    assert "PROJECTS" in roots.output
+    assert "STATUS" in roots.output
     assert str(root) in roots.output
-    assert "Found 0 projects." in refreshed.output
+    assert roots.output.splitlines()[1].split()[-2:] == ["1", "available"]
+    assert "Found 1 projects." in refreshed.output
 
 
 def test_shell_init(runner: CliRunner) -> None:
