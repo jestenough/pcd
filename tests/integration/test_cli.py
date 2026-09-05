@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING
 
 import click
 import pytest
+from click.shell_completion import CompletionItem
 
 import pcd_cli.cli as cli_module
+import pcd_cli.cli.app as app_module
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli, ProjectCommandGroup
 from pcd_cli.config import InvalidConfigError
@@ -92,3 +94,36 @@ def test_group_keeps_known_command() -> None:
     assert name == "init"
     assert command is not None
     assert rest == []
+
+
+def test_group_delegates_option_resolution() -> None:
+    group = ProjectCommandGroup()
+    ctx = click.Context(group)
+
+    with pytest.raises(click.UsageError, match="No such option"):
+        group.resolve_command(ctx, ["--unknown"])
+
+
+def test_group_delegates_unknown_name_without_project_command() -> None:
+    group = ProjectCommandGroup()
+    ctx = click.Context(group)
+
+    with pytest.raises(click.UsageError, match="No such command"):
+        group.resolve_command(ctx, ["repo"])
+
+
+def test_group_completion_deduplicates_command_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    group = ProjectCommandGroup()
+    group.add_command(click.Command("init"))
+    ctx = click.Context(group)
+    monkeypatch.setattr(
+        app_module,
+        "project_completions",
+        lambda _value: [CompletionItem("init")],
+    )
+
+    completions = group.shell_complete(ctx, "i")
+
+    assert [item.value for item in completions] == ["init"]

@@ -8,6 +8,8 @@ from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
+from pcd_cli.navigation import select_project
+from pcd_cli.picker import ProjectPicker
 
 if TYPE_CHECKING:
     import pytest
@@ -83,6 +85,20 @@ def test_duplicate_name_uses_choice(
 
     assert result.exit_code == 0
     assert result.output.splitlines()[0] == str(canonical_path(second))
+
+
+def test_select_project_opens_picker_for_multiple_matches(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    matches = (
+        Project("first", tmp_path / "first", tmp_path / "first", ProjectSource.MANUAL),
+        Project("second", tmp_path / "second", tmp_path / "second", ProjectSource.MANUAL),
+    )
+    monkeypatch.setattr(ProjectPicker, "run", lambda _picker: matches[1])
+
+    assert select_project(projects, matches, "") is matches[1]
 
 
 def test_cancel_multiple_does_not_refresh(

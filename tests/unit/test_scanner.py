@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pcd_cli.models import Project, ProjectSettings
-from pcd_cli.scanner import ProjectScanner
+from pcd_cli.scanner import _mark_visited, ProjectScanner
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -189,6 +189,10 @@ def test_permission_error_is_ignored(
     monkeypatch.setattr(os, "scandir", broken)
 
     assert scan(settings(root)) == []
+
+
+def test_disappeared_directory_is_not_marked_visited(tmp_path: Path) -> None:
+    assert _mark_visited(tmp_path / "missing", set()) is False
 
 
 def test_unrelated_roots_are_both_scanned(tmp_path: Path) -> None:

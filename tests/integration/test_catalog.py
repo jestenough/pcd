@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pcd_cli.cache import ProjectCache
+from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import pytest
 
     from pcd_cli.catalog import ProjectCatalog
 
@@ -32,6 +36,10 @@ def test_projects_build_cache_when_missing(projects: ProjectCatalog, tmp_path: P
 
     assert [item.name for item in items] == ["repo"]
     assert projects.cache.load() == items
+
+
+def test_completion_candidates_are_empty_without_cache(projects: ProjectCatalog) -> None:
+    assert list(projects.completion_candidates("repo")) == []
 
 
 def test_matches_refreshes_after_cache_miss(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -120,6 +128,20 @@ def test_fuzzy_match_refreshes_after_cache_miss(projects: ProjectCatalog, tmp_pa
     assert [item.name for item in projects.search("mdc")] == ["medcab"]
 
 
+def test_search_recovers_when_cache_disappears(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    (root / "repo/.git").mkdir(parents=True)
+    assert projects.config.add_root(root)
+    projects.cache.save(())
+    monkeypatch.setattr(ProjectCache, "load", lambda _cache: None)
+
+    assert [item.name for item in projects.search("repo")] == ["repo"]
+
+
 def test_parent_root_prefers_nearest_root(projects: ProjectCatalog, tmp_path: Path) -> None:
     outer = tmp_path / "outer"
     inner = outer / "inner"
@@ -131,6 +153,20 @@ def test_parent_root_prefers_nearest_root(projects: ProjectCatalog, tmp_path: Pa
 
     assert projects.find_parent_root(child) == inner
     assert projects.find_parent_root(tmp_path / "elsewhere") is None
+
+
+def test_parent_root_ignores_shallower_match_after_nearest(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+) -> None:
+    outer = tmp_path / "outer"
+    inner = outer / "inner"
+    child = inner / "child"
+    child.mkdir(parents=True)
+    assert projects.config.add_root(inner)
+    assert projects.config.add_root(outer)
+
+    assert projects.find_parent_root(child) == inner
 
 
 def test_exact_duplicates_use_history(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -146,3 +182,19 @@ def test_exact_duplicates_use_history(projects: ProjectCatalog, tmp_path: Path) 
     projects.history.record(items[1].path)
 
     assert projects.search("same") == [items[1], items[0]]
+
+
+def test_manual_add_handles_concurrent_config_change(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "repo"
+    project = Project("repo", canonical_path(path), path, ProjectSource.MANUAL)
+    monkeypatch.setattr(Config, "add_project", lambda _config, _project: False)
+
+    assert projects.add_project(project) is False
+
+
+def test_remove_missing_project_returns_false(projects: ProjectCatalog, tmp_path: Path) -> None:
+    assert projects.remove_project(tmp_path / "missing") is False
