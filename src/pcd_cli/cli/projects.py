@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from enum import StrEnum
 from pathlib import Path
 from typing import assert_never, ClassVar, Literal, NamedTuple, TYPE_CHECKING
 
@@ -15,14 +17,18 @@ if TYPE_CHECKING:
     from pcd_cli.catalog import ProjectCatalog
 
 type ProjectSourceLabel = Literal["manual", "scanned"]
-type ProjectStatusLabel = Literal["available", "missing"]
+
+
+class ProjectStatus(StrEnum):
+    AVAILABLE = "available"
+    MISSING = "missing"
 
 
 class ProjectListRow(NamedTuple):
     name: str
     path: str
     source: ProjectSourceLabel
-    status: ProjectStatusLabel
+    status: ProjectStatus
 
     @classmethod
     def from_project(cls, project: Project) -> ProjectListRow:
@@ -44,11 +50,11 @@ class ProjectListRow(NamedTuple):
                 assert_never(source)
 
     @staticmethod
-    def _status_label(path: Path) -> ProjectStatusLabel:
+    def _status_label(path: Path) -> ProjectStatus:
         if path.is_dir():
-            return "available"
+            return ProjectStatus.AVAILABLE
         else:
-            return "missing"
+            return ProjectStatus.MISSING
 
 
 class ProjectListTable:
@@ -58,6 +64,12 @@ class ProjectListTable:
 
     def __init__(self, projects: Sequence[Project]) -> None:
         self._rows = tuple(ProjectListRow.from_project(project) for project in projects)
+
+    @classmethod
+    def from_rows(cls, rows: Sequence[ProjectListRow]) -> ProjectListTable:
+        table = cls(())
+        table._rows = tuple(rows)
+        return table
 
     def render(self) -> str:
         if self._rows:
@@ -156,10 +168,49 @@ def remove(catalog: ProjectCatalog, query: str) -> None:
 
 
 @click.command("list")
+@click.option("--manual", is_flag=True, help="Show manually registered projects.")
+@click.option("--discovered", is_flag=True, help="Show automatically discovered projects.")
+@click.option("--missing", is_flag=True, help="Show projects whose directories are missing.")
+@click.option("--json", "as_json", is_flag=True, help="Print projects as JSON.")
 @click.pass_obj
-def list_projects(catalog: ProjectCatalog) -> None:
-    """List all known projects."""
-    table = ProjectListTable(catalog.projects())
+def list_projects(
+    catalog: ProjectCatalog,
+    manual: bool,
+    discovered: bool,
+    missing: bool,
+    as_json: bool,
+) -> None:
+    """List and filter known projects."""
+    entries: list[tuple[Project, ProjectListRow]] = []
+    for project in catalog.projects():
+        source_matches = (
+            not (manual or discovered)
+            or (manual and project.source is ProjectSource.MANUAL)
+            or (discovered and project.source is ProjectSource.DISCOVERED)
+        )
+        if not source_matches:
+            continue
+
+        row = ProjectListRow.from_project(project)
+        if missing and row.status is not ProjectStatus.MISSING:
+            continue
+
+        entries.append((project, row))
+
+    if as_json:
+        items = [
+            {
+                "name": project.name,
+                "path": str(project.display_path),
+                "source": project.source.value,
+                "status": row.status,
+            }
+            for project, row in entries
+        ]
+        click.echo(json.dumps(items, indent=2))
+        return
+
+    table = ProjectListTable.from_rows(tuple(row for _, row in entries))
     click.echo(table.render())
 
 

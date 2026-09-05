@@ -8,9 +8,6 @@ NEXT
 ----
 
 CLI
-    Add filters: `--manual`, `--discovered`, and `--missing`.
-    Add `pcd list --json`.
-    Keep `pcd` with no arguments equivalent to showing help.
     Add `pcd info <project>` with project metadata and status.
     Handle duplicate project names explicitly.
 

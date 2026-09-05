@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import pty
 import subprocess
@@ -48,6 +49,14 @@ def test_cli_discovers_and_lists_project(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     )
+    listed_json = subprocess.run(
+        [_pcd_executable(), "list", "--json"],
+        cwd=root,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
     assert initialized.returncode == 0
     assert "Added root" in initialized.stdout
@@ -55,6 +64,15 @@ def test_cli_discovers_and_lists_project(tmp_path: Path) -> None:
     assert "repo" in listed.stdout
     assert "scanned" in listed.stdout
     assert "available" in listed.stdout
+    assert listed_json.returncode == 0
+    assert json.loads(listed_json.stdout) == [
+        {
+            "name": "repo",
+            "path": str(root / "repo"),
+            "source": "discovered",
+            "status": "available",
+        }
+    ]
 
 
 def test_bash_wrapper_changes_parent_shell_directory(tmp_path: Path) -> None:
