@@ -25,6 +25,14 @@ def test_project_option_cannot_mix_with_command(runner: CliRunner) -> None:
     assert runner.invoke(cli, ["--project", "x", "list"]).exit_code == 2
 
 
+def test_no_arguments_show_help(runner: CliRunner) -> None:
+    result = runner.invoke(cli, [])
+    help_result = runner.invoke(cli, ["--help"])
+
+    assert result.exit_code == 0
+    assert result.output == help_result.output
+
+
 def test_group_routes_unknown_name_to_project() -> None:
     group = ProjectCommandGroup()
     group.add_command(click.Command("init"))

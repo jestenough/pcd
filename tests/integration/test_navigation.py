@@ -134,19 +134,6 @@ def test_missing_manual_path(runner: CliRunner, tmp_path: Path) -> None:
     assert "no longer exists" in result.output
 
 
-def test_no_args_cancel(
-    runner: CliRunner,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / "repo"
-    path.mkdir()
-    assert runner.invoke(cli, ["add", str(path)]).exit_code == 0
-    monkeypatch.setattr(navigation_module, "select_project", lambda *_args: None)
-
-    assert runner.invoke(cli, []).exit_code == 0
-
-
 def test_shell_protocol(
     runner: CliRunner,
     tmp_path: Path,

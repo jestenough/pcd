@@ -8,7 +8,6 @@ NEXT
 ----
 
 CLI
-    Keep `pcd` with no arguments equivalent to showing help.
     Add `pcd info <project>` with project metadata and status.
     Handle duplicate project names explicitly.
 
