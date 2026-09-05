@@ -83,11 +83,13 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
     navigate_to_project(catalog, project_name, exact_only=True)
 
 
-for command in project_commands:
+for command in (
+    *project_commands,
+    config_commands,
+    shell_commands,
+    shell_init,
+):
     cli.add_command(command)
-cli.add_command(config_commands)
-cli.add_command(shell_commands)
-cli.add_command(shell_init)
 
 
 def main() -> None:
