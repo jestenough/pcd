@@ -43,6 +43,12 @@ PROJECT LIST
     List all known projects:
         pcd list
 
+    Filter by source or availability, or print JSON:
+        pcd list --manual
+        pcd list --discovered
+        pcd list --missing
+        pcd list --json
+
 
 CONFIGURATION
 

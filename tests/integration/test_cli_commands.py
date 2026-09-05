@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pcd_cli.cli.projects as projects_module
@@ -9,8 +11,6 @@ from pcd_cli.cli import cli
 from pcd_cli.models import Project, ProjectSource
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
     from click.testing import CliRunner
 
@@ -44,6 +44,86 @@ def test_manual_add_list_remove(runner: CliRunner, tmp_path: Path) -> None:
     assert "manual" in listed.output
     assert removed.exit_code == 0
     assert ProjectCatalog.create().config.load().manual_projects == ()
+
+
+def test_list_filters_by_source_and_missing_status(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "projects"
+    discovered = root / "discovered"
+    manual = tmp_path / "manual"
+    missing = tmp_path / "missing"
+    (discovered / ".git").mkdir(parents=True)
+    manual.mkdir()
+    missing.mkdir()
+    monkeypatch.chdir(root)
+    assert runner.invoke(cli, ["init"]).exit_code == 0
+    assert runner.invoke(cli, ["add", str(manual)]).exit_code == 0
+    assert runner.invoke(cli, ["add", str(missing)]).exit_code == 0
+    missing.rmdir()
+
+    manual_result = runner.invoke(cli, ["list", "--manual"])
+    discovered_result = runner.invoke(cli, ["list", "--discovered"])
+    missing_result = runner.invoke(cli, ["list", "--missing"])
+    combined_result = runner.invoke(cli, ["list", "--manual", "--discovered"])
+
+    assert manual_result.exit_code == 0
+    assert "manual" in manual_result.output
+    assert "missing" in manual_result.output
+    assert "discovered" not in manual_result.output
+    assert discovered_result.exit_code == 0
+    assert "discovered" in discovered_result.output
+    assert str(manual) not in discovered_result.output
+    assert missing_result.exit_code == 0
+    assert "missing" in missing_result.output
+    assert str(manual) not in missing_result.output
+    assert combined_result.exit_code == 0
+    assert "discovered" in combined_result.output
+    assert str(manual) in combined_result.output
+
+
+def test_list_help_describes_filters_and_json(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["list", "--help"])
+
+    assert result.exit_code == 0
+    for option in ("--manual", "--discovered", "--missing", "--json"):
+        assert option in result.output
+
+
+def test_list_json_is_machine_readable(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "docs"
+    project.mkdir()
+    assert runner.invoke(cli, ["add", str(project)]).exit_code == 0
+    project.rmdir()
+    status_checks = 0
+    is_dir = Path.is_dir
+
+    def count_status_checks(path: Path) -> bool:
+        nonlocal status_checks
+        if path == project:
+            status_checks += 1
+        return is_dir(path)
+
+    monkeypatch.setattr(Path, "is_dir", count_status_checks)
+
+    result = runner.invoke(cli, ["list", "--manual", "--missing", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == [
+        {
+            "name": "docs",
+            "path": str(project),
+            "source": "manual",
+            "status": "missing",
+        }
+    ]
+    assert status_checks == 1
 
 
 def test_uninit(runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

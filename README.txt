@@ -45,7 +45,7 @@ COMMANDS
     pcd roots                    List scan roots
     pcd refresh                  Rescan roots and rebuild the project cache
 
-    pcd list                     List all known projects
+    pcd list [options]           List and filter known projects
     pcd config path              Print the configuration file path
     pcd config show              Print the effective configuration
     pcd config edit              Edit the user configuration
@@ -61,6 +61,8 @@ COMMANDS
 
 * Projects inside registered roots are discovered automatically.
 * You can register multiple scan roots.
+* Filter `pcd list` with `--manual`, `--discovered`, or `--missing`.
+* Use `pcd list --json` for machine-readable output.
 * Set `editor = "nvim"` in the configuration to choose an editor for `pcd config edit`.
 
 
