@@ -172,9 +172,12 @@ def test_shell_status_reports_configuration_and_activation(
     result = runner.invoke(cli, ["shell", "status"])
 
     assert result.exit_code == 0
-    assert "Shell: fish" in result.output
-    assert "Configured: installed by pcd" in result.output
-    assert "Active in current shell: yes" in result.output
+    assert result.output.splitlines() == [
+        f"{'Shell:':<24} fish",
+        f"{'Config:':<24} {ShellIntegration.for_shell(Shell.FISH).config_path}",
+        f"{'Configured:':<24} installed by pcd",
+        "Active in current shell: yes",
+    ]
 
 
 def test_shell_install_can_be_explicit_when_shell_is_unknown(

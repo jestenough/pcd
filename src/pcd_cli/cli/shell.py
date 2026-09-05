@@ -49,12 +49,14 @@ def install_shell(shell: str | None) -> None:
 def shell_status(shell: str | None) -> None:
     """Show whether shell integration is configured and active."""
     integration = _shell_integration(shell)
-    click.echo(f"Shell: {integration.shell.value}")
-    click.echo(f"Config: {integration.config_path}")
-    click.echo(f"Configured: {integration.state().value}")
-
-    active = shell_integration_active()
-    click.echo(f"Active in current shell: {'yes' if active else 'no'}")
+    rows = (
+        ("Shell:", integration.shell.value),
+        ("Config:", str(integration.config_path)),
+        ("Configured:", integration.state().value),
+        ("Active in current shell:", "yes" if shell_integration_active() else "no"),
+    )
+    label_width = max(len(label) for label, _value in rows)
+    click.echo("\n".join(f"{label:<{label_width}} {value}" for label, value in rows))
 
 
 @shell_commands.command("uninstall")
