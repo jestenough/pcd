@@ -12,8 +12,8 @@ import pcd_cli.cli.app as app_module
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli, ProjectCommandGroup
 from pcd_cli.config import InvalidConfigError
+from pcd_cli.integrations.shell import ShellIntegrationError
 from pcd_cli.models import Project, ProjectSource
-from pcd_cli.shell_integration import ShellIntegrationError
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -7,12 +7,12 @@ from click.shell_completion import CompletionItem
 
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.filesystem import format_path
-from pcd_cli.models import ExitCode, ProjectSource
-from pcd_cli.shell_integration import (
+from pcd_cli.integrations.shell import (
     inactive_shell_message,
     SHELL_CD_EXIT_CODE,
     shell_integration_active,
 )
+from pcd_cli.models import ExitCode, ProjectSource
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
