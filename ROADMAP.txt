@@ -1,96 +1,182 @@
 PCD ROADMAP
 ===========
 
-The roadmap is grouped by priority rather than by implementation area.
+Current release: 0.2.2. Next release: 0.2.3.
+Work through releases in the order below. Within each release, follow the listed order.
+Versions after 0.2.3 are planning targets, not fixed delivery dates.
+Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
 
 
-NEXT
-----
+0.2.3 - SHELL UPDATE AND BUG FIXES
+---------------------------------
 
-CLI
-    Add `pcd info <project>` with project metadata and status.
-    Handle duplicate project names explicitly.
+ALREADY MERGED SINCE 0.2.2
+    Show a reload command after shell integration installation.
+    Test installation separately for Bash, Zsh, and Fish.
+    Replace `pcd shell print` and `pcd shell-init` with `pcd shell init`.
+    Move shell implementation to `pcd_cli.integrations.shell`.
 
-SHELL INTEGRATION
-    Improve `pcd shell status` formatting.
+REMAINING WORK
+    1. Update stale managed shell blocks to use the current initialization command.
+       Preserve unrelated startup configuration and leave manual setup untouched.
+    2. Fix the meaning of activity reported by `pcd shell status`.
+       Distinguish wrapper activity from the navigation request protocol.
+    3. Add real Bash, Zsh, and Fish E2E tests for initialization, status, and navigation.
+       Install the shells in CI so these checks actually execute.
+    4. Distinguish a valid empty cache from a missing or corrupt cache.
+    5. Correct root project counts for symlinks and overlapping roots.
+       Count a project in every root through which it is discovered.
+       If discovery provenance requires a cache schema change, move that change to 0.2.5.
+    6. Keep navigation working when usage history cannot be written.
+       Warn on expected filesystem errors without polluting destination stdout.
+    7. Complete only manual projects for `pcd remove`.
+    8. Add regression tests for these fixes and exact list/JSON result assertions.
+    9. Correct documentation for no-argument help, cache behavior, and root counts.
+       Document the removed shell commands and Python import path as breaking changes.
+       Explain automatic managed-block updates and manual configuration migration.
+   10. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
 
-COMPLETION
-    Complete project names for `pcd <project>`.
-    Complete appropriate project names for `remove` and `info`.
-
-DOCTOR
-    Add `pcd doctor`.
-    Check configuration, cache, scan roots, missing projects, and PATH.
-    Check shell integration when detectable.
+RELEASE NOTE
+    The planned 0.2.3 includes intentional compatibility breaks already merged into master.
+    Do not describe it as fully backward-compatible with 0.2.2.
 
 
-PLANNED
--------
+0.2.4 - PERFORMANCE
+-------------------
 
-ALIASES
-    Add:
-        pcd alias add <project> --as <alias>
-        pcd alias remove <alias>
-        pcd alias list
+    1. Establish benchmark baselines before changing algorithms.
+       Cover CLI startup, exact/fuzzy navigation, completion, shell wrappers, and history I/O.
+       Include cache misses, empty caches, add operations, and large/wide directory trees.
+       Measure broad and selective queries at multiple catalog sizes.
+       Measure time separately from memory; report distributions, not only best runs.
+    2. Avoid repeated cache/history loads and repeated ranking within one CLI operation.
+    3. Avoid scanning all roots twice during `pcd add`.
+       Preserve conflict detection and config/cache correctness.
+    4. Expand shell E2E coverage beyond the behavior changed in 0.2.3.
+    5. Compare end-to-end latency and memory with the baseline.
+       Retain optimizations only when they improve measured behavior without regressions.
 
-    Aliases reference concrete project paths and survive `pcd refresh`.
-    Detect conflicts with commands, projects, groups, and other aliases.
+CONSTRAINTS
+    Preserve public behavior and storage formats.
+    Do not introduce a new database or background service in this release.
+
+
+0.2.5 - DATA RELIABILITY
+------------------------
+
+    1. Test concurrent configuration mutations and cache publication together.
+       Preserve existing config read-modify-write locking.
+    2. Prevent an older refresh from overwriting a newer cache snapshot.
+    3. Define handling of partial scans caused by filesystem errors.
+       Do not publish a partial result as an ordinary complete cache snapshot.
+    4. Complete discovery-provenance/root-count work deferred from 0.2.3, if required.
+    5. Synchronize parent directories after atomic replacement for crash durability.
+       Verify supported platforms and measure the extra write cost.
+
+
+0.3.0 - PROJECT INSPECTION AND EXCLUSIONS
+----------------------------------------
+
+    1. Handle duplicate project names explicitly and preserve path-based selection.
+       Keep `--project` for names reserved by commands.
+    2. Add `pcd info <project>` with metadata and status.
+       Add appropriate project completion with the command.
+    3. Add `pcd ignore <project>` and `pcd unignore <project>` for discovered projects.
+       Persist ignored paths so `pcd refresh` does not restore them.
+    4. Add `pcd doctor`.
+       Check configuration, cache, roots, missing projects, PATH, and detectable shell integration.
+    5. Document and test refresh behavior with exclusions and unavailable projects.
+       Preserve user configuration and report stale references rather than deleting them silently.
+
+
+0.4.0 - PROJECT ALIASES
+-----------------------
+
+COMMANDS
+    pcd alias add <project> --as <alias>
+    pcd alias remove <alias>
+    pcd alias list
+
+REQUIREMENTS
+    Reference concrete project paths and survive `pcd refresh`.
+    Detect conflicts with commands, projects, and other aliases.
     Show aliases in `pcd list` and `pcd info`.
     Report stale aliases in `pcd doctor`.
     Complete aliases in relevant commands.
 
-GROUPS
-    Add:
-        pcd group create <group>
-        pcd group add <group> <project> [--as <member-name>]
-        pcd group remove <group> <member-name>
-        pcd group delete <group>
-        pcd group list
-        pcd group show <group>
 
-    Groups use local member names and reference concrete project paths.
-    They do not depend on parent directory names and survive `pcd refresh`.
-    The same member name may exist in different groups.
-    Group and project conflicts must have deterministic resolution.
-    `--project` remains available for explicit disambiguation.
+0.5.0 - PROJECT GROUPS
+----------------------
 
-    Navigation:
-        pcd <group>
-        pcd <group>/<member-name>
+COMMANDS
+    pcd group create <group>
+    pcd group add <group> <project> [--as <member-name>]
+    pcd group remove <group> <member-name>
+    pcd group delete <group>
+    pcd group list
+    pcd group show <group>
 
-    Complete group names and group members.
-    Show groups in `pcd list` and `pcd info`.
+NAVIGATION
+    pcd <group>
+    pcd <group>/<member-name>
+
+REQUIREMENTS
+    Use local member names and reference concrete project paths.
+    Do not depend on parent directory names; survive `pcd refresh`.
+    Allow the same member name in different groups.
+    Resolve conflicts with commands, projects, and aliases deterministically.
+    Keep `--project` available for explicit disambiguation.
+    Complete group names and members; show groups in `pcd list` and `pcd info`.
     Report missing group members in `pcd doctor`.
-
-REFRESH AND STALE DATA
-    Rebuild discovered projects without deleting user configuration.
-    Preserve manual projects, aliases, and groups during refresh.
-    Remove missing discovered projects from the rebuilt cache.
-    Report stale user-defined references instead of silently deleting them.
+    Preserve manual projects, aliases, and groups while rebuilding discovered projects.
+    Remove missing discovered projects from the rebuilt cache, not user-defined references.
 
 
-LATER
------
+0.6.0 - OUTPUT AND SEARCH UX
+----------------------------
 
-FRECENCY
-    Track project usage count and last-used time.
-    Prefer recently and frequently used projects in the picker.
-    Keep history lightweight and bounded.
-    Do not affect deterministic exact-name resolution.
+    1. Align tables using terminal display width for wide Unicode characters.
+    2. Evaluate compact JSON and an explicit pretty-print option without silently breaking output.
+    3. Add machine-readable output where useful and additional list sorting modes.
+    4. Evaluate optional helpers for creating groups from matching project names.
+    5. Review frecency ranking using the existing usage count and last-used timestamp.
+       History collection and bounded retention already exist; do not reimplement them.
+       Keep history lightweight and preserve deterministic unique exact-name resolution.
 
-SHELLS
-    Keep automatic installation optional; manual configuration remains supported.
-    Add Nushell support.
 
-OUTPUT AND TOOLING
-    Add more machine-readable output where useful.
-    Add additional list sorting modes.
-    Add optional helpers for creating groups from matching project names.
-    Complete release automation and PyPI publishing.
+0.7.0 - ADDITIONAL SHELL SUPPORT
+-------------------------------
 
-FUTURE INTEGRATIONS
-    Add optional tmux integration.
+    Add Nushell support with real shell tests and documentation.
+    Keep automatic installation optional and manual configuration supported.
+
+
+AFTER 0.7.0 - RESEARCH AND OPTIONAL INTEGRATIONS
+-----------------------------------------------
+
+Assign a release version to each implementation after feasibility and scope are established.
+These are retained ideas, not prerequisites for the releases above.
+
+STORAGE RESEARCH
+    Investigate scalable lookup beyond JSONL using the performance benchmark results.
+    Compare SQLite with indexed-file alternatives before choosing a format.
+    Plan migration, recovery, and compatibility before scheduling a storage change.
+    Revisit earlier only if measurements show a practical blocker.
+
+OPTIONAL INTEGRATIONS
+    Add tmux integration.
     Add IDE and editor plugins.
     Add direnv integration.
     Add import and interoperability with zoxide.
     Add desktop launcher integration.
+
+
+CHECKS FOR EVERY RELEASE
+------------------------
+
+    Test each behavior change and update help/documentation in the same release.
+    Run format, lint, type checks, unit/integration/E2E tests, build, and wheel smoke checks.
+    Run relevant real-shell tests and performance comparisons for affected behavior.
+    Verify the exact published commit and matching package/tag versions.
+    Maintain CI release automation and PyPI publishing; improve shared workflows independently.
+    Record migrations and compatibility breaks explicitly in release notes.
