@@ -13,7 +13,6 @@ CLI
 
 SHELL INTEGRATION
     Improve `pcd shell status` formatting.
-    Test Bash, Zsh, and Fish independently.
     Consider renaming `pcd shell print <shell>` to `pcd shell init <shell>`.
 
 COMPLETION

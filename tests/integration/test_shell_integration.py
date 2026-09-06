@@ -83,6 +83,18 @@ def test_render_rejects_unsupported_shell() -> None:
         render_shell_integration("powershell")  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("shell", list(Shell), ids=lambda shell: shell.value)
+def test_shell_install_supports_each_shell(runner: CliRunner, shell: Shell) -> None:
+    integration = ShellIntegration.for_shell(shell)
+
+    result = runner.invoke(cli, ["shell", "install", shell.value])
+
+    assert result.exit_code == 0
+    assert f"Installed {shell.value} integration" in result.output
+    assert f"Reload the current shell with: {integration.reload_command()}" in result.output
+    assert f"pcd shell print {shell.value}" in integration.config_path.read_text(encoding="utf-8")
+
+
 def test_shell_install_detects_zsh_and_is_idempotent(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
