@@ -220,13 +220,6 @@ def test_roots_and_refresh_commands(
     assert "Found 1 projects." in refreshed.output
 
 
-def test_shell_init(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["shell-init", "bash"])
-
-    assert result.exit_code == 0
-    assert "bash_source" in result.output
-
-
 def test_invalid_add_arguments(runner: CliRunner, tmp_path: Path) -> None:
     missing = runner.invoke(cli, ["add", str(tmp_path / "missing")])
 

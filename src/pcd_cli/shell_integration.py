@@ -1,6 +1,7 @@
 """Generate, install, and inspect shell integration for pcd."""
 
 import os
+import shlex
 import stat
 from dataclasses import dataclass
 from enum import StrEnum
@@ -48,6 +49,9 @@ class ShellIntegration:
 
     def state(self) -> ShellIntegrationState:
         return _integration_state(self._read(), self.shell)
+
+    def reload_command(self) -> str:
+        return f"source {shlex.quote(str(self.config_path))}"
 
     def install(self) -> bool:
         """Install the managed block. Return whether the config changed."""
@@ -146,16 +150,16 @@ def inactive_shell_message() -> str:
         )
     return (
         f"Shell integration is configured in {integration.config_path} but is not active in "
-        f"this shell. Restart it or run: exec {integration.shell.value}"
+        f"this shell. Reload it with: {integration.reload_command()}"
     )
 
 
 def render_managed_block(shell: Shell) -> str:
     """Render the small persistent block written into the shell startup file."""
     command = (
-        f'eval "$(command pcd shell print {shell.value})"'
+        f'eval "$(command pcd shell init {shell.value})"'
         if shell is not Shell.FISH
-        else f"command pcd shell print {shell.value} | source"
+        else f"command pcd shell init {shell.value} | source"
     )
     return f"{_MANAGED_BLOCK_START}\n{command}\n{_MANAGED_BLOCK_END}\n"
 
@@ -179,9 +183,8 @@ def _integration_state(content: str, shell: Shell) -> ShellIntegrationState:
     if bounds is not None:
         return ShellIntegrationState.MANAGED
 
-    legacy = f"pcd shell-init {shell.value}"
-    current = f"pcd shell print {shell.value}"
-    if legacy in content or current in content:
+    current = f"pcd shell init {shell.value}"
+    if current in content:
         return ShellIntegrationState.MANUAL
     return ShellIntegrationState.ABSENT
 

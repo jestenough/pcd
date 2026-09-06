@@ -80,7 +80,7 @@ SHELL INTEGRATION
         pcd shell uninstall
 
     Print shell integration code:
-        pcd shell print <shell>
+        pcd shell init <shell>
 
     Shell integration can also be added manually to the shell config.
 

@@ -9,10 +9,9 @@ from pcd_cli.cli.config import (
 from pcd_cli.cli.projects import add, list_projects, project, remove
 from pcd_cli.cli.roots import init, refresh, roots, uninit
 from pcd_cli.cli.shell import (
+    init_shell,
     install_shell,
-    print_shell_integration,
     shell_commands,
-    shell_init,
     shell_status,
     uninstall_shell,
 )
@@ -24,18 +23,17 @@ __all__ = [
     "config_commands",
     "edit_config",
     "init",
+    "init_shell",
     "install_shell",
     "list_projects",
     "main",
     "package_version",
     "print_config_path",
-    "print_shell_integration",
     "project",
     "refresh",
     "remove",
     "roots",
     "shell_commands",
-    "shell_init",
     "shell_status",
     "show_config",
     "uninit",

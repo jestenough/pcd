@@ -9,7 +9,7 @@ import click
 import pytest
 
 from pcd_cli.cli import cli
-from pcd_cli.cli.shell import shell_init
+from pcd_cli.cli.shell import init_shell
 from pcd_cli.shell_integration import (
     inactive_shell_message,
     render_shell_integration,
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 def test_bash_native(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["shell", "print", "bash"])
+    result = runner.invoke(cli, ["shell", "init", "bash"])
 
     assert result.exit_code == 0
     assert "pcd()" in result.output
@@ -35,29 +35,22 @@ def test_bash_native(runner: CliRunner) -> None:
 
 
 def test_zsh_native(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["shell", "print", "zsh"])
+    result = runner.invoke(cli, ["shell", "init", "zsh"])
 
     assert result.exit_code == 0
     assert "zsh_source" in result.output
 
 
 def test_fish_native(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["shell", "print", "fish"])
+    result = runner.invoke(cli, ["shell", "init", "fish"])
 
     assert result.exit_code == 0
     assert "function pcd" in result.output
     assert "fish_source" in result.output
 
 
-def test_legacy_shell_init_remains_available(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["shell-init", "zsh"])
-
-    assert result.exit_code == 0
-    assert "zsh_source" in result.output
-
-
-def test_legacy_shell_init_can_render_as_standalone_command(runner: CliRunner) -> None:
-    result = runner.invoke(shell_init, ["bash"])
+def test_shell_init_can_render_as_standalone_command(runner: CliRunner) -> None:
+    result = runner.invoke(init_shell, ["bash"])
 
     assert result.exit_code == 0
     assert "bash_source" in result.output
@@ -72,7 +65,7 @@ def test_shell_wrapper_uses_registered_root_commands(
     commands = {**cli.commands, "interactive": click.Command("interactive")}
     monkeypatch.setattr(cli, "commands", commands)
 
-    result = runner.invoke(cli, ["shell", "print", shell.value])
+    result = runner.invoke(cli, ["shell", "init", shell.value])
 
     assert result.exit_code == 0
     assert "interactive" in result.output
@@ -81,6 +74,18 @@ def test_shell_wrapper_uses_registered_root_commands(
 def test_render_rejects_unsupported_shell() -> None:
     with pytest.raises(ValueError, match="Unsupported shell"):
         render_shell_integration("powershell")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("shell", list(Shell), ids=lambda shell: shell.value)
+def test_shell_install_supports_each_shell(runner: CliRunner, shell: Shell) -> None:
+    integration = ShellIntegration.for_shell(shell)
+
+    result = runner.invoke(cli, ["shell", "install", shell.value])
+
+    assert result.exit_code == 0
+    assert f"Installed {shell.value} integration" in result.output
+    assert f"Reload the current shell with: {integration.reload_command()}" in result.output
+    assert f"pcd shell init {shell.value}" in integration.config_path.read_text(encoding="utf-8")
 
 
 def test_shell_install_detects_zsh_and_is_idempotent(
@@ -97,12 +102,12 @@ def test_shell_install_detects_zsh_and_is_idempotent(
 
     assert installed.exit_code == 0
     assert "Installed zsh integration" in installed.output
-    assert "exec zsh" in installed.output
+    assert f"source {config}" in installed.output
     assert repeated.exit_code == 0
     assert "already installed" in repeated.output
     assert content.startswith("export EDITOR=vim\n")
     assert content.count("# >>> pcd shell integration >>>") == 1
-    assert 'eval "$(command pcd shell print zsh)"' in content
+    assert 'eval "$(command pcd shell init zsh)"' in content
 
 
 def test_shell_install_leaves_manual_configuration_untouched(
@@ -111,7 +116,7 @@ def test_shell_install_leaves_manual_configuration_untouched(
 ) -> None:
     monkeypatch.setenv("SHELL", "/bin/zsh")
     config = Path.home() / ".zshrc"
-    manual = 'eval "$(pcd shell-init zsh)"\n'
+    manual = 'eval "$(pcd shell init zsh)"\n'
     config.write_text(manual, encoding="utf-8")
 
     result = runner.invoke(cli, ["shell", "install"])
@@ -144,7 +149,7 @@ def test_shell_uninstall_does_not_remove_manual_configuration(
 ) -> None:
     monkeypatch.setenv("SHELL", "/bin/bash")
     config = Path.home() / ".bashrc"
-    manual = 'eval "$(pcd shell-init bash)"\n'
+    manual = 'eval "$(pcd shell init bash)"\n'
     config.write_text(manual, encoding="utf-8")
 
     result = runner.invoke(cli, ["shell", "uninstall"])
@@ -191,6 +196,13 @@ def test_shell_install_can_be_explicit_when_shell_is_unknown(
     assert explicit.exit_code == 0
 
 
+def test_reload_command_quotes_config_path(tmp_path: Path) -> None:
+    config = tmp_path / "shell config"
+    integration = ShellIntegration(Shell.BASH, config)
+
+    assert integration.reload_command() == f"source '{config}'"
+
+
 def test_fish_config_uses_xdg_config_home(monkeypatch: pytest.MonkeyPatch) -> None:
     config_home = Path(os.environ["XDG_CONFIG_HOME"])
     integration = ShellIntegration.for_shell(Shell.FISH)
@@ -224,7 +236,7 @@ def test_install_preserves_symlinked_shell_config(
 
     assert result.exit_code == 0
     assert config.is_symlink()
-    assert "pcd shell print zsh" in target.read_text(encoding="utf-8")
+    assert "pcd shell init zsh" in target.read_text(encoding="utf-8")
 
 
 def test_invalid_managed_block_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -279,7 +291,7 @@ def test_shell_integration_state_detects_manual_and_absent() -> None:
     integration = ShellIntegration.for_shell(Shell.BASH)
     assert integration.state() is ShellIntegrationState.ABSENT
 
-    integration.config_path.write_text('eval "$(pcd shell-init bash)"\n', encoding="utf-8")
+    integration.config_path.write_text('eval "$(pcd shell init bash)"\n', encoding="utf-8")
     assert integration.state() is ShellIntegrationState.MANUAL
 
 
