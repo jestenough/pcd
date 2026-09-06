@@ -157,9 +157,9 @@ def inactive_shell_message() -> str:
 def render_managed_block(shell: Shell) -> str:
     """Render the small persistent block written into the shell startup file."""
     command = (
-        f'eval "$(command pcd shell print {shell.value})"'
+        f'eval "$(command pcd shell init {shell.value})"'
         if shell is not Shell.FISH
-        else f"command pcd shell print {shell.value} | source"
+        else f"command pcd shell init {shell.value} | source"
     )
     return f"{_MANAGED_BLOCK_START}\n{command}\n{_MANAGED_BLOCK_END}\n"
 
@@ -183,9 +183,8 @@ def _integration_state(content: str, shell: Shell) -> ShellIntegrationState:
     if bounds is not None:
         return ShellIntegrationState.MANAGED
 
-    legacy = f"pcd shell-init {shell.value}"
-    current = f"pcd shell print {shell.value}"
-    if legacy in content or current in content:
+    current = f"pcd shell init {shell.value}"
+    if current in content:
         return ShellIntegrationState.MANUAL
     return ShellIntegrationState.ABSENT
 

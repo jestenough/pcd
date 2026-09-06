@@ -52,6 +52,7 @@ COMMANDS
     pcd config validate          Validate the user configuration
 
     pcd shell install            Install shell integration
+    pcd shell init <shell>       Print shell integration code
     pcd shell status             Show shell integration status
     pcd shell uninstall          Remove shell integration
 

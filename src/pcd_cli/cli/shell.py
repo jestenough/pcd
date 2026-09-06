@@ -78,28 +78,17 @@ def uninstall_shell(shell: str | None) -> None:
     click.echo(f"Shell integration is not installed in {integration.config_path}")
 
 
-@shell_commands.command("print")
+@shell_commands.command("init")
 @click.argument(
     "shell",
     required=False,
     type=click.Choice([item.value for item in Shell], case_sensitive=False),
 )
 @click.pass_context
-def print_shell_integration(ctx: click.Context, shell: str | None) -> None:
+def init_shell(ctx: click.Context, shell: str | None) -> None:
     """Print shell integration for manual dotfile management."""
     selected = _selected_shell(shell)
     click.echo(render_shell_integration(selected, _registered_command_names(ctx)), nl=False)
-
-
-@click.command("shell-init", hidden=True)
-@click.argument("shell", type=click.Choice([item.value for item in Shell], case_sensitive=False))
-@click.pass_context
-def shell_init(ctx: click.Context, shell: str) -> None:
-    """Backward-compatible alias for `pcd shell print`."""
-    click.echo(
-        render_shell_integration(Shell(shell.casefold()), _registered_command_names(ctx)),
-        nl=False,
-    )
 
 
 def _shell_integration(shell: str | None) -> ShellIntegration:

@@ -174,7 +174,7 @@ def test_navigation_recommends_reload_when_integration_is_configured(
 ) -> None:
     monkeypatch.setenv("SHELL", "/bin/zsh")
     (Path.home() / ".zshrc").write_text(
-        'eval "$(pcd shell-init zsh)"\n',
+        'eval "$(pcd shell init zsh)"\n',
         encoding="utf-8",
     )
     repo = tmp_path / "repo"

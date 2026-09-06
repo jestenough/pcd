@@ -86,7 +86,7 @@ def test_bash_wrapper_changes_parent_shell_directory(tmp_path: Path) -> None:
         [
             "bash",
             "-c",
-            'eval "$("$1" shell print bash)"; pcd repo; pwd',
+            'eval "$("$1" shell init bash)"; pcd repo; pwd',
             "pcd-test",
             str(_pcd_executable()),
         ],
@@ -124,7 +124,7 @@ def test_config_edit_keeps_terminal_attached_through_bash_wrapper(tmp_path: Path
             [
                 "bash",
                 "-c",
-                'eval "$("$1" shell print bash)"; pcd config edit',
+                'eval "$("$1" shell init bash)"; pcd config edit',
                 "pcd-test",
                 str(_pcd_executable()),
             ],
