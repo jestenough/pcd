@@ -27,7 +27,7 @@ def install_shell(shell: str | None) -> None:
     integration = _shell_integration(shell)
     if integration.install():
         click.echo(f"Installed {integration.shell.value} integration in {integration.config_path}")
-        click.echo(f"Restart the shell or run: exec {integration.shell.value}")
+        click.echo(f"Reload the current shell with: {integration.reload_command()}")
         return
 
     state = integration.state()

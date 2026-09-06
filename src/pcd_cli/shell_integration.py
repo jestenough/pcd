@@ -1,6 +1,7 @@
 """Generate, install, and inspect shell integration for pcd."""
 
 import os
+import shlex
 import stat
 from dataclasses import dataclass
 from enum import StrEnum
@@ -48,6 +49,9 @@ class ShellIntegration:
 
     def state(self) -> ShellIntegrationState:
         return _integration_state(self._read(), self.shell)
+
+    def reload_command(self) -> str:
+        return f"source {shlex.quote(str(self.config_path))}"
 
     def install(self) -> bool:
         """Install the managed block. Return whether the config changed."""
@@ -146,7 +150,7 @@ def inactive_shell_message() -> str:
         )
     return (
         f"Shell integration is configured in {integration.config_path} but is not active in "
-        f"this shell. Restart it or run: exec {integration.shell.value}"
+        f"this shell. Reload it with: {integration.reload_command()}"
     )
 
 

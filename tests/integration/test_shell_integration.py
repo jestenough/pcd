@@ -97,7 +97,7 @@ def test_shell_install_detects_zsh_and_is_idempotent(
 
     assert installed.exit_code == 0
     assert "Installed zsh integration" in installed.output
-    assert "exec zsh" in installed.output
+    assert f"source {config}" in installed.output
     assert repeated.exit_code == 0
     assert "already installed" in repeated.output
     assert content.startswith("export EDITOR=vim\n")
@@ -189,6 +189,13 @@ def test_shell_install_can_be_explicit_when_shell_is_unknown(
     assert automatic.exit_code == 2
     assert "Cannot detect a supported shell" in automatic.output
     assert explicit.exit_code == 0
+
+
+def test_reload_command_quotes_config_path(tmp_path: Path) -> None:
+    config = tmp_path / "shell config"
+    integration = ShellIntegration(Shell.BASH, config)
+
+    assert integration.reload_command() == f"source '{config}'"
 
 
 def test_fish_config_uses_xdg_config_home(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -185,7 +185,7 @@ def test_navigation_recommends_reload_when_integration_is_configured(
 
     assert result.exit_code == 0
     assert "configured" in result.output
-    assert "exec zsh" in result.output
+    assert f"source {Path.home() / '.zshrc'}" in result.output
     assert "pcd shell install" not in result.output
 
 
@@ -204,7 +204,7 @@ def test_navigation_recommends_reload_after_managed_install(
 
     assert result.exit_code == 0
     assert "configured" in result.output
-    assert "exec zsh" in result.output
+    assert f"source {Path.home() / '.zshrc'}" in result.output
     assert "pcd shell install" not in result.output
 
 
