@@ -10,7 +10,7 @@ import pytest
 
 from pcd_cli.cli import cli
 from pcd_cli.cli.shell import init_shell
-from pcd_cli.shell_integration import (
+from pcd_cli.integrations.shell import (
     inactive_shell_message,
     render_shell_integration,
     Shell,

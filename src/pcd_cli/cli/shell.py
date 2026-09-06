@@ -1,6 +1,6 @@
 import click
 
-from pcd_cli.shell_integration import (
+from pcd_cli.integrations.shell import (
     detect_shell,
     render_shell_integration,
     Shell,

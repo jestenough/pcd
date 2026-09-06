@@ -11,9 +11,9 @@ from pcd_cli.cli.projects import project_commands
 from pcd_cli.cli.roots import root_commands
 from pcd_cli.cli.shell import shell_commands
 from pcd_cli.config import InvalidConfigError
+from pcd_cli.integrations.shell import ShellIntegrationError
 from pcd_cli.models import ExitCode
 from pcd_cli.navigation import navigate_to_project, project_completions
-from pcd_cli.shell_integration import ShellIntegrationError
 
 if TYPE_CHECKING:
     from click.shell_completion import CompletionItem
