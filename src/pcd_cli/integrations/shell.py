@@ -12,6 +12,7 @@ from typing import Literal, Self
 from pcd_cli.filesystem import atomic_write, file_lock
 
 SHELL_MODE_ENV = "PCD_SHELL"
+SHELL_WRAPPER_ENV = "PCD_WRAPPER"
 # Internal success status: stdout contains the destination path when this is returned.
 SHELL_CD_EXIT_CODE = 10
 _MANAGED_BLOCK_START = "# >>> pcd shell integration >>>"
@@ -132,6 +133,14 @@ def shell_integration_active() -> bool:
     return os.environ.get(SHELL_MODE_ENV) == "1"
 
 
+def invoking_shell() -> Shell | None:
+    """Identify the wrapper for this invocation, not the parent shell's state."""
+    try:
+        return Shell(os.environ.get(SHELL_WRAPPER_ENV, ""))
+    except ValueError:
+        return None
+
+
 def inactive_shell_message() -> str:
     """Explain how to activate directory changes when the wrapper is not running."""
     try:
@@ -217,6 +226,7 @@ def _posix(completion: Literal["bash_source", "zsh_source"], commands: tuple[str
     return dedent(
         f"""\
         pcd() {{
+            local -x {SHELL_WRAPPER_ENV}={completion.removesuffix("_source")}
             if [ -n "${{_PCD_COMPLETE:-}}" ]; then
                 command pcd "$@"
                 return $?
@@ -263,6 +273,7 @@ def _fish(commands: tuple[str, ...]) -> str:
     return dedent(
         f"""\
         function pcd
+            set -lx {SHELL_WRAPPER_ENV} fish
             if set -q _PCD_COMPLETE
                 command pcd $argv
                 return $status
