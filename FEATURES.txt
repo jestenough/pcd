@@ -76,6 +76,11 @@ SHELL INTEGRATION
     Check shell integration status:
         pcd shell status
 
+    Status reports the selected shell configuration and the wrapper used for this invocation.
+    `Invoked through wrapper: no` does not mean the parent shell has no wrapper installed.
+    A direct call such as `command pcd shell status` bypasses the wrapper.
+    The wrapper marker is scoped to its function call, not exported for the whole shell session.
+
     Remove shell integration:
         pcd shell uninstall
 

@@ -2,9 +2,9 @@ import click
 
 from pcd_cli.integrations.shell import (
     detect_shell,
+    invoking_shell,
     render_shell_integration,
     Shell,
-    shell_integration_active,
     ShellIntegration,
     ShellIntegrationError,
     ShellIntegrationState,
@@ -47,14 +47,15 @@ def install_shell(shell: str | None) -> None:
     type=click.Choice([item.value for item in Shell], case_sensitive=False),
 )
 def shell_status(shell: str | None) -> None:
-    """Show whether shell integration is configured and active."""
+    """Show shell configuration and whether this invocation used a wrapper."""
     integration = _shell_integration(shell)
     click.echo(f"Shell: {integration.shell.value}")
     click.echo(f"Config: {integration.config_path}")
     click.echo(f"Configured: {integration.state().value}")
 
-    active = shell_integration_active()
-    click.echo(f"Active in current shell: {'yes' if active else 'no'}")
+    wrapper: Shell | None = invoking_shell()
+    invoked = "no" if wrapper is None else f"yes ({wrapper.value})"
+    click.echo(f"Invoked through wrapper: {invoked}")
 
 
 @shell_commands.command("uninstall")

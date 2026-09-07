@@ -17,28 +17,27 @@ ALREADY MERGED SINCE 0.2.2
     Move shell implementation to `pcd_cli.integrations.shell`.
 
 REMAINING WORK
-    1. Update stale managed shell blocks to use the current initialization command.
-       Preserve unrelated startup configuration and leave manual setup untouched.
-    2. Fix the meaning of activity reported by `pcd shell status`.
+    1. Fix the meaning of activity reported by `pcd shell status`.
        Distinguish wrapper activity from the navigation request protocol.
-    3. Add real Bash, Zsh, and Fish E2E tests for initialization, status, and navigation.
+    2. Add real Bash, Zsh, and Fish E2E tests for initialization, status, and navigation.
        Install the shells in CI so these checks actually execute.
-    4. Distinguish a valid empty cache from a missing or corrupt cache.
-    5. Correct root project counts for symlinks and overlapping roots.
+    3. Distinguish a valid empty cache from a missing or corrupt cache.
+    4. Correct root project counts for symlinks and overlapping roots.
        Count a project in every root through which it is discovered.
        If discovery provenance requires a cache schema change, move that change to 0.2.5.
-    6. Keep navigation working when usage history cannot be written.
+    5. Keep navigation working when usage history cannot be written.
        Warn on expected filesystem errors without polluting destination stdout.
-    7. Complete only manual projects for `pcd remove`.
-    8. Add regression tests for these fixes and exact list/JSON result assertions.
-    9. Correct documentation for no-argument help, cache behavior, and root counts.
+    6. Complete only manual projects for `pcd remove`.
+    7. Add regression tests for these fixes and exact list/JSON result assertions.
+    8. Correct documentation for no-argument help, cache behavior, and root counts.
        Document the removed shell commands and Python import path as breaking changes.
-       Explain automatic managed-block updates and manual configuration migration.
-   10. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
+       Explain how to replace old initialization commands manually in shell startup files.
+    9. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
 
 RELEASE NOTE
     The planned 0.2.3 includes intentional compatibility breaks already merged into master.
     Do not describe it as fully backward-compatible with 0.2.2.
+    Automatic migration of existing shell blocks is intentionally out of scope.
 
 
 0.2.4 - PERFORMANCE

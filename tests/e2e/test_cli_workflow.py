@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import os
 import pty
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 def _pcd_executable() -> Path:
@@ -141,3 +144,42 @@ def test_config_edit_keeps_terminal_attached_through_bash_wrapper(tmp_path: Path
 
     assert result.returncode == 0
     assert marker.is_file()
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+def test_shell_status_identifies_wrapper_without_leaking_marker(tmp_path: Path, shell: str) -> None:
+    executable = shutil.which(shell)
+    if executable is None:
+        pytest.skip(f"{shell} is not installed")
+    environment = _environment(tmp_path)
+    environment.pop("PCD_WRAPPER", None)
+    environment.pop("PCD_SHELL", None)
+    environment["SHELL"] = executable
+    initialize = (
+        f"command pcd shell init {shell} | source"
+        if shell == "fish"
+        else f'eval "$(command pcd shell init {shell})"'
+    )
+    result = subprocess.run(
+        [
+            executable,
+            "-c",
+            f"{initialize}; command pcd shell status; pcd shell status; command pcd shell status",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    status_lines = [
+        line for line in result.stdout.splitlines() if line.startswith("Invoked through wrapper:")
+    ]
+    assert status_lines == [
+        "Invoked through wrapper: no",
+        f"Invoked through wrapper: yes ({shell})",
+        "Invoked through wrapper: no",
+    ]

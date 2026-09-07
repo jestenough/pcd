@@ -29,6 +29,7 @@ def test_bash_native(runner: CliRunner) -> None:
     assert result.exit_code == 0
     assert "pcd()" in result.output
     assert "bash_source" in result.output
+    assert "local -x PCD_WRAPPER=bash" in result.output
     assert "builtin cd" in result.output
     assert "-eq 10" in result.output
     assert "__PCD_CD__" not in result.output
@@ -39,6 +40,7 @@ def test_zsh_native(runner: CliRunner) -> None:
 
     assert result.exit_code == 0
     assert "zsh_source" in result.output
+    assert "local -x PCD_WRAPPER=zsh" in result.output
 
 
 def test_fish_native(runner: CliRunner) -> None:
@@ -47,6 +49,7 @@ def test_fish_native(runner: CliRunner) -> None:
     assert result.exit_code == 0
     assert "function pcd" in result.output
     assert "fish_source" in result.output
+    assert "set -lx PCD_WRAPPER fish" in result.output
 
 
 def test_shell_init_can_render_as_standalone_command(runner: CliRunner) -> None:
@@ -166,12 +169,20 @@ def test_shell_uninstall_reports_absent_integration(runner: CliRunner) -> None:
     assert "not installed" in result.output
 
 
-def test_shell_status_reports_configuration_and_activation(
+@pytest.mark.parametrize("wrapper", [None, "bash", "zsh", "fish", "unknown"])
+@pytest.mark.parametrize("navigation", ["0", "1"])
+def test_shell_status_reports_configuration_and_wrapper(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
+    wrapper: str | None,
+    navigation: str,
 ) -> None:
     monkeypatch.setenv("SHELL", "/bin/fish")
-    monkeypatch.setenv("PCD_SHELL", "1")
+    monkeypatch.setenv("PCD_SHELL", navigation)
+    if wrapper is None:
+        monkeypatch.delenv("PCD_WRAPPER", raising=False)
+    else:
+        monkeypatch.setenv("PCD_WRAPPER", wrapper)
     assert runner.invoke(cli, ["shell", "install"]).exit_code == 0
 
     result = runner.invoke(cli, ["shell", "status"])
@@ -179,7 +190,8 @@ def test_shell_status_reports_configuration_and_activation(
     assert result.exit_code == 0
     assert "Shell: fish" in result.output
     assert "Configured: installed by pcd" in result.output
-    assert "Active in current shell: yes" in result.output
+    expected = f"yes ({wrapper})" if wrapper in ("bash", "zsh", "fish") else "no"
+    assert f"Invoked through wrapper: {expected}" in result.output.splitlines()
 
 
 def test_shell_install_can_be_explicit_when_shell_is_unknown(
