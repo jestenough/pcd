@@ -147,10 +147,14 @@ def test_config_edit_keeps_terminal_attached_through_bash_wrapper(tmp_path: Path
 
 
 @pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
-def test_shell_status_identifies_wrapper_without_leaking_marker(tmp_path: Path, shell: str) -> None:
+def test_shell_init_status_and_navigation_work_in_each_shell(tmp_path: Path, shell: str) -> None:
     executable = shutil.which(shell)
     if executable is None:
         pytest.skip(f"{shell} is not installed")
+    root = tmp_path / "projects"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    subprocess.run([_pcd_executable(), "init"], cwd=root, env=_environment(tmp_path), check=True)
     environment = _environment(tmp_path)
     environment.pop("PCD_WRAPPER", None)
     environment.pop("PCD_SHELL", None)
@@ -164,7 +168,7 @@ def test_shell_status_identifies_wrapper_without_leaking_marker(tmp_path: Path, 
         [
             executable,
             "-c",
-            f"{initialize}; command pcd shell status; pcd shell status; command pcd shell status",
+            f"{initialize}; command pcd shell status; pcd shell status; pcd repo; pwd; command pcd shell status",
         ],
         cwd=tmp_path,
         env=environment,
@@ -183,3 +187,4 @@ def test_shell_status_identifies_wrapper_without_leaking_marker(tmp_path: Path, 
         f"Invoked through wrapper: yes ({shell})",
         "Invoked through wrapper: no",
     ]
+    assert str(repo) in result.stdout.splitlines()

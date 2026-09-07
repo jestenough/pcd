@@ -93,6 +93,10 @@ jobs:
       - name: Install dependencies
         run: make install
 
+      - name: Install supported shells
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends --yes zsh fish
+
       - name: Run tests
         run: make cov
 
