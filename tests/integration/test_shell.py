@@ -50,6 +50,8 @@ def test_fish_native(runner: CliRunner) -> None:
     assert "function pcd" in result.output
     assert "fish_source" in result.output
     assert "set -lx PCD_WRAPPER fish" in result.output
+    assert "set -lx PCD_SHELL 1" in result.output
+    assert "env PCD_SHELL=1 command pcd" not in result.output
 
 
 def test_shell_init_can_render_as_standalone_command(runner: CliRunner) -> None:

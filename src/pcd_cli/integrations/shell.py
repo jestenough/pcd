@@ -291,7 +291,10 @@ def _fish(commands: tuple[str, ...]) -> str:
                     return $status
             end
 
-            set -l output (env {SHELL_MODE_ENV}=1 command pcd $argv)
+            set -l output (begin
+                set -lx {SHELL_MODE_ENV} 1
+                command pcd $argv
+            end)
             set -l code $status
             if test $code -eq {SHELL_CD_EXIT_CODE}
                 cd -- "$output"
