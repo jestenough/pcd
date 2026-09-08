@@ -23,12 +23,11 @@ REMAINING WORK
        If discovery provenance requires a cache schema change, move that change to 0.2.5.
     3. Keep navigation working when usage history cannot be written.
        Warn on expected filesystem errors without polluting destination stdout.
-    4. Complete only manual projects for `pcd remove`.
-    5. Add regression tests for these fixes and exact list/JSON result assertions.
-    6. Correct documentation for no-argument help, cache behavior, and root counts.
+    4. Add regression tests for these fixes and exact list/JSON result assertions.
+    5. Correct documentation for no-argument help, cache behavior, and root counts.
        Document the removed shell commands and Python import path as breaking changes.
        Explain how to replace old initialization commands manually in shell startup files.
-    7. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
+    6. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
 
 RELEASE NOTE
     The planned 0.2.3 includes intentional compatibility breaks already merged into master.
@@ -76,8 +75,9 @@ CONSTRAINTS
        Keep `--project` for names reserved by commands.
     2. Add `pcd info <project>` with metadata and status.
        Add appropriate project completion with the command.
-    3. Add `pcd ignore <project>` and `pcd unignore <project>` for discovered projects.
-       Persist ignored paths so `pcd refresh` does not restore them.
+    3. Extend `pcd remove <project>` to manual and discovered projects without deleting directories.
+       Unregister manual projects and persist discovered project paths as exclusions.
+       Let `pcd add <path>` restore excluded projects and complete all removable projects.
     4. Add `pcd doctor`.
        Check configuration, cache, roots, missing projects, PATH, and detectable shell integration.
     5. Document and test refresh behavior with exclusions and unavailable projects.
