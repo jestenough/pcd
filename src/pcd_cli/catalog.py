@@ -35,7 +35,7 @@ class ProjectCatalog:
         )
 
     def projects(self) -> list[Project]:
-        if cached := self.cache.load():
+        if (cached := self.cache.load()) is not None:
             return cached
 
         return self.refresh()

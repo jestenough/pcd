@@ -17,17 +17,16 @@ ALREADY MERGED SINCE 0.2.2
     Move shell implementation to `pcd_cli.integrations.shell`.
 
 REMAINING WORK
-    1. Distinguish a valid empty cache from a missing or corrupt cache.
-    2. Correct root project counts for symlinks and overlapping roots.
+    1. Correct root project counts for symlinks and overlapping roots.
        Count a project in every root through which it is discovered.
        If discovery provenance requires a cache schema change, move that change to 0.2.5.
-    3. Keep navigation working when usage history cannot be written.
+    2. Keep navigation working when usage history cannot be written.
        Warn on expected filesystem errors without polluting destination stdout.
-    4. Add regression tests for these fixes and exact list/JSON result assertions.
-    5. Correct documentation for no-argument help, cache behavior, and root counts.
+    3. Add regression tests for these fixes and exact list/JSON result assertions.
+    4. Correct documentation for no-argument help, cache behavior, and root counts.
        Document the removed shell commands and Python import path as breaking changes.
        Explain how to replace old initialization commands manually in shell startup files.
-    6. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
+    5. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
 
 RELEASE NOTE
     The planned 0.2.3 includes intentional compatibility breaks already merged into master.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pcd_cli.cache import ProjectCache
+from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
@@ -12,7 +13,6 @@ if TYPE_CHECKING:
 
     import pytest
 
-    from pcd_cli.catalog import ProjectCatalog
 
 
 def test_refresh_prefers_manual_on_duplicate(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -36,6 +36,20 @@ def test_projects_build_cache_when_missing(projects: ProjectCatalog, tmp_path: P
 
     assert [item.name for item in items] == ["repo"]
     assert projects.cache.load() == items
+
+
+def test_projects_uses_valid_empty_cache(
+    projects: ProjectCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projects.cache.save(())
+
+    def fail(_catalog: ProjectCatalog) -> list[Project]:
+        raise AssertionError("valid empty cache must not refresh")
+
+    monkeypatch.setattr(ProjectCatalog, "refresh", fail)
+
+    assert projects.projects() == []
 
 
 def test_completion_candidates_are_empty_without_cache(projects: ProjectCatalog) -> None:
