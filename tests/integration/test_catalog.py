@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     import pytest
 
 
-
 def test_refresh_prefers_manual_on_duplicate(projects: ProjectCatalog, tmp_path: Path) -> None:
     root = tmp_path / "root"
     repo = root / "repo"
