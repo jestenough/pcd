@@ -5,13 +5,14 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
+
 import pcd_cli.cli.projects as projects_module
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.models import Project, ProjectSource
 
 if TYPE_CHECKING:
-    import pytest
     from click.testing import CliRunner
 
 
@@ -46,16 +47,35 @@ def test_manual_add_list_remove(runner: CliRunner, tmp_path: Path) -> None:
     assert ProjectCatalog.create().config.load().manual_projects == ()
 
 
+@pytest.mark.parametrize("as_json", [False, True])
+@pytest.mark.parametrize(
+    ("filters", "expected_indices"),
+    [
+        ([], [0, 1, 2, 3]),
+        (["--manual"], [2, 3]),
+        (["--discovered"], [0, 1]),
+        (["--missing"], [1, 3]),
+        (["--manual", "--discovered"], [0, 1, 2, 3]),
+        (["--manual", "--missing"], [3]),
+        (["--discovered", "--missing"], [1]),
+        (["--manual", "--discovered", "--missing"], [1, 3]),
+    ],
+)
 def test_list_filters_by_source_and_missing_status(
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    filters: list[str],
+    expected_indices: list[int],
+    as_json: bool,
 ) -> None:
     root = tmp_path / "projects"
     discovered = root / "discovered"
     manual = tmp_path / "manual"
     missing = tmp_path / "missing"
+    gone = root / "gone"
     (discovered / ".git").mkdir(parents=True)
+    (gone / ".git").mkdir(parents=True)
     manual.mkdir()
     missing.mkdir()
     monkeypatch.chdir(root)
@@ -63,25 +83,73 @@ def test_list_filters_by_source_and_missing_status(
     assert runner.invoke(cli, ["add", str(manual)]).exit_code == 0
     assert runner.invoke(cli, ["add", str(missing)]).exit_code == 0
     missing.rmdir()
+    (gone / ".git").rmdir()
+    gone.rmdir()
 
-    manual_result = runner.invoke(cli, ["list", "--manual"])
-    discovered_result = runner.invoke(cli, ["list", "--discovered"])
-    missing_result = runner.invoke(cli, ["list", "--missing"])
-    combined_result = runner.invoke(cli, ["list", "--manual", "--discovered"])
+    rows = [
+        ("discovered", str(discovered), "discovered", "available"),
+        ("gone", str(gone), "discovered", "missing"),
+        ("manual", str(manual), "manual", "available"),
+        ("missing", str(missing), "manual", "missing"),
+    ]
+    expected = [rows[i] for i in expected_indices]
+    result = runner.invoke(cli, ["list", *filters, *(["--json"] if as_json else [])])
 
-    assert manual_result.exit_code == 0
-    assert "manual" in manual_result.output
-    assert "missing" in manual_result.output
-    assert "discovered" not in manual_result.output
-    assert discovered_result.exit_code == 0
-    assert "discovered" in discovered_result.output
-    assert str(manual) not in discovered_result.output
-    assert missing_result.exit_code == 0
-    assert "missing" in missing_result.output
-    assert str(manual) not in missing_result.output
-    assert combined_result.exit_code == 0
-    assert "discovered" in combined_result.output
-    assert str(manual) in combined_result.output
+    assert result.exit_code == 0
+    assert result.stderr == ""
+    if as_json:
+        assert json.loads(result.stdout) == [
+            dict(zip(("name", "path", "source", "status"), row, strict=True)) for row in expected
+        ]
+    else:
+        assert [line.split() for line in result.stdout.splitlines()] == [
+            ["NAME", "PATH", "SOURCE", "STATUS"],
+            *[
+                [name, path, "scanned" if source == "discovered" else source, status]
+                for name, path, source, status in expected
+            ],
+        ]
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+@pytest.mark.parametrize("filters", [["--discovered"], ["--missing"], ["--manual", "--missing"]])
+def test_list_filters_can_return_no_projects(
+    runner: CliRunner,
+    tmp_path: Path,
+    filters: list[str],
+    as_json: bool,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert runner.invoke(cli, ["add", str(repo)]).exit_code == 0
+
+    result = runner.invoke(cli, ["list", *filters, *(["--json"] if as_json else [])])
+
+    assert result.exit_code == 0
+    assert result.stdout == ("[]\n" if as_json else "No projects found.\n")
+    assert result.stderr == ""
+
+
+def test_list_preserves_symlink_display_path(runner: CliRunner, tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    link = Path.home() / "project link"
+    link.symlink_to(target, target_is_directory=True)
+    assert runner.invoke(cli, ["add", str(link), "--name", "docs"]).exit_code == 0
+
+    listed = runner.invoke(cli, ["list"])
+    listed_json = runner.invoke(cli, ["list", "--json"])
+
+    assert listed.exit_code == 0
+    assert listed.stderr == ""
+    assert listed.stdout == (
+        "NAME  PATH            SOURCE  STATUS\ndocs  ~/project link  manual  available\n"
+    )
+    assert listed_json.exit_code == 0
+    assert listed_json.stderr == ""
+    assert json.loads(listed_json.stdout) == [
+        {"name": "docs", "path": str(link), "source": "manual", "status": "available"}
+    ]
 
 
 def test_list_help_describes_filters_and_json(runner: CliRunner) -> None:
@@ -115,7 +183,8 @@ def test_list_json_is_machine_readable(
     result = runner.invoke(cli, ["list", "--manual", "--missing", "--json"])
 
     assert result.exit_code == 0
-    assert json.loads(result.output) == [
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == [
         {
             "name": "docs",
             "path": str(project),
@@ -242,11 +311,27 @@ def test_duplicate_path_is_not_added_twice(runner: CliRunner, tmp_path: Path) ->
     assert "already exists" in result.output
 
 
-def test_list_empty(runner: CliRunner) -> None:
-    result = runner.invoke(cli, ["list"])
+@pytest.mark.parametrize("as_json", [False, True])
+@pytest.mark.parametrize("cached", [False, True])
+def test_list_empty(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    as_json: bool,
+    cached: bool,
+) -> None:
+    if cached:
+        ProjectCatalog.create().cache.save(())
+
+        def fail_refresh(_catalog: ProjectCatalog) -> list[Project]:
+            raise AssertionError("valid empty cache must not refresh")
+
+        monkeypatch.setattr(ProjectCatalog, "refresh", fail_refresh)
+
+    result = runner.invoke(cli, ["list", *(["--json"] if as_json else [])])
 
     assert result.exit_code == 0
-    assert "No projects found" in result.output
+    assert result.stdout == ("[]\n" if as_json else "No projects found.\n")
+    assert result.stderr == ""
 
 
 def test_stale_discovered_project_is_rejected(
