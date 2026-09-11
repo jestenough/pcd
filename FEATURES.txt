@@ -5,8 +5,10 @@ PROJECT NAVIGATION
     Jump to a project by name:
         pcd <project>
 
-    Open the interactive project picker:
+    Show help (without opening the picker):
         pcd
+
+    The interactive picker opens when a project query has multiple matches.
 
     Resolve a project whose name conflicts with a command:
         pcd --project <project>
@@ -27,6 +29,13 @@ PROJECT DISCOVERY
         pcd refresh
 
     Projects inside registered roots are discovered automatically.
+    Discovery runs during scans, not continuously. List and roots use the cached
+    snapshot, including a valid empty cache; navigation refreshes after a search miss.
+    Completion never scans. Run `pcd refresh` after changing scan settings by hand.
+
+    Root counts currently use canonical-path containment and exclude manual projects.
+    Overlapping-root counts are not additive. Discovery through symlinks and nested
+    scan boundaries has known counting limitations; see README.txt.
 
 
 MANUAL PROJECTS
@@ -88,6 +97,10 @@ SHELL INTEGRATION
         pcd shell init <shell>
 
     Shell integration can also be added manually to the shell config.
+    Version 0.2.3 removes `pcd shell print` and `pcd shell-init` and moves Python
+    imports from `pcd_cli.shell_integration` to `pcd_cli.integrations.shell`.
+    Old startup lines are not migrated automatically; see README.txt for replacement
+    commands and reload instructions for Bash, Zsh, and Fish.
 
 
 CLI

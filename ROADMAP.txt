@@ -16,15 +16,11 @@ ALREADY MERGED SINCE 0.2.2
     Replace `pcd shell print` and `pcd shell-init` with `pcd shell init`.
     Move shell implementation to `pcd_cli.integrations.shell`.
 
-REMAINING WORK
-    1. Correct root project counts for symlinks and overlapping roots.
-       Count a project in every root through which it is discovered.
-       If discovery provenance requires a cache schema change, move that change to 0.2.5.
-       Add regression tests for symlink and overlapping-root counts with that fix.
-    4. Correct documentation for no-argument help, cache behavior, and root counts.
-       Document the removed shell commands and Python import path as breaking changes.
-       Explain how to replace old initialization commands manually in shell startup files.
-    5. Require release-commit quality, tests, shell E2E, build, wheel smoke, and tag/version checks.
+RELEASE ACCEPTANCE
+    Documentation and automated release gates are implemented.
+    Publish only after the tag-triggered checks pass on the exact release commit:
+    quality, tests, supported-shell E2E, build, wheel smoke, and tag/version validation.
+    Exact discovery-root counts require a cache schema change and are deferred to 0.2.5.
 
 RELEASE NOTE
     The planned 0.2.3 includes intentional compatibility breaks already merged into master.
@@ -60,7 +56,12 @@ CONSTRAINTS
     2. Prevent an older refresh from overwriting a newer cache snapshot.
     3. Define handling of partial scans caused by filesystem errors.
        Do not publish a partial result as an ordinary complete cache snapshot.
-    4. Complete discovery-provenance/root-count work deferred from 0.2.3, if required.
+    4. Store discovery provenance and correct root project counts (deferred from 0.2.3).
+       The current cache retains one display path per canonical project, losing other routes.
+       Count a project once in every root through which it is discovered, not merely contained.
+       Version the cache schema and rebuild older snapshots without changing user configuration.
+       Add regression tests for shared symlink targets, followed symlink trees, overlapping roots,
+       and nested roots separated by exclusions or repository boundaries, including cache reloads.
     5. Synchronize parent directories after atomic replacement for crash durability.
        Verify supported platforms and measure the extra write cost.
 
