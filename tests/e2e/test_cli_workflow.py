@@ -64,10 +64,13 @@ def test_cli_discovers_and_lists_project(tmp_path: Path) -> None:
     assert initialized.returncode == 0
     assert "Added root" in initialized.stdout
     assert listed.returncode == 0
-    assert "repo" in listed.stdout
-    assert "scanned" in listed.stdout
-    assert "available" in listed.stdout
+    assert listed.stdout == (
+        f"NAME  {'PATH':<{len(str(root / 'repo'))}}  SOURCE   STATUS\n"
+        f"repo  {root / 'repo'}  scanned  available\n"
+    )
+    assert listed.stderr == ""
     assert listed_json.returncode == 0
+    assert listed_json.stderr == ""
     assert json.loads(listed_json.stdout) == [
         {
             "name": "repo",
@@ -78,18 +81,23 @@ def test_cli_discovers_and_lists_project(tmp_path: Path) -> None:
     ]
 
 
-def test_bash_wrapper_changes_parent_shell_directory(tmp_path: Path) -> None:
+@pytest.mark.parametrize("history_writable", [False, True])
+def test_bash_wrapper_changes_parent_shell_directory(
+    tmp_path: Path, history_writable: bool
+) -> None:
     root = tmp_path / "projects"
     repo = root / "repo"
     (repo / ".git").mkdir(parents=True)
     environment = _environment(tmp_path)
     subprocess.run([_pcd_executable(), "init"], cwd=root, env=environment, check=True)
+    if not history_writable:
+        Path(environment["XDG_STATE_HOME"]).write_text("not a directory", encoding="utf-8")
 
     result = subprocess.run(
         [
             "bash",
             "-c",
-            'eval "$("$1" shell init bash)"; pcd repo; pwd',
+            'eval "$("$1" shell init bash)"; pcd repo && pwd',
             "pcd-test",
             str(_pcd_executable()),
         ],
@@ -101,7 +109,13 @@ def test_bash_wrapper_changes_parent_shell_directory(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0
-    assert result.stdout.strip() == str(repo)
+    assert result.stdout == f"{repo}\n"
+    if history_writable:
+        assert result.stderr == ""
+    else:
+        assert result.stderr.startswith("Warning: could not write usage history: ")
+        assert len(result.stderr.splitlines()) == 1
+        assert environment["XDG_STATE_HOME"] in result.stderr
 
 
 def test_config_edit_keeps_terminal_attached_through_bash_wrapper(tmp_path: Path) -> None:
