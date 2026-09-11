@@ -93,13 +93,15 @@ def test_bash_wrapper_changes_parent_shell_directory(
     if not history_writable:
         Path(environment["XDG_STATE_HOME"]).write_text("not a directory", encoding="utf-8")
 
+    # Older Bash versions warn about completion during init, independently of navigation.
     result = subprocess.run(
         [
             "bash",
             "-c",
-            'eval "$("$1" shell init bash)"; pcd repo && pwd',
+            '{ eval "$("$1" shell init bash)"; } 2> "$2"; pcd repo && pwd',
             "pcd-test",
             str(_pcd_executable()),
+            str(tmp_path / "shell-init.stderr"),
         ],
         cwd=root,
         env=environment,
