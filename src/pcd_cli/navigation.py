@@ -65,7 +65,10 @@ def project_completions(value: str) -> list[CompletionItem]:
 
 def _open_project(catalog: ProjectCatalog, project: Project) -> None:
     if project.path.is_dir():
-        catalog.record_usage(project)
+        try:
+            catalog.record_usage(project)
+        except OSError as exc:
+            click.echo(f"Warning: could not write usage history: {exc}", err=True)
     elif project.source is ProjectSource.MANUAL:
         click.echo(
             f"Project path no longer exists: {format_path(project.display_path)}",
