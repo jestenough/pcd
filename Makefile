@@ -10,6 +10,7 @@
 	test-unit \
 	test-integration \
 	test-e2e \
+	require-shells \
 	cov \
 	check \
 	bench \
@@ -54,6 +55,13 @@ test-integration:
 test-e2e:
 	poetry run pytest tests/e2e
 
+require-shells:
+	@for shell in bash zsh fish; do \
+		command -v "$$shell" >/dev/null || { \
+			printf 'Required shell is missing: %s\n' "$$shell" >&2; exit 1; \
+		}; \
+	done
+
 cov:
 	poetry run pytest \
 		--cov=pcd_cli \
@@ -75,13 +83,13 @@ smoke:
 	rm -rf .smoke
 	poetry run python -m venv .smoke
 	.smoke/bin/python -m pip install dist/*.whl
-	.smoke/bin/pcd --version
-	.smoke/bin/pcd --help
+	.smoke/bin/python -I tests/smoke_wheel.py "$$(poetry version --short)"
 	rm -rf .smoke
 
-build-check: build smoke
+build-check: build
+	$(MAKE) smoke
 
-release-check: check build-check
+release-check: require-shells check build-check
 
 docker:
 	docker build --tag pcd-cli:local .
