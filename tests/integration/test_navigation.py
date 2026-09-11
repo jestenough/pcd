@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import errno
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import pytest
 
 import pcd_cli.navigation as navigation_module
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.filesystem import canonical_path
+from pcd_cli.history import UsageHistory
+from pcd_cli.integrations.shell import inactive_shell_message
 from pcd_cli.models import Project, ProjectSource
 from pcd_cli.navigation import select_project
 from pcd_cli.picker import ProjectPicker
 
 if TYPE_CHECKING:
-    import pytest
     from click.testing import CliRunner
 
 
@@ -148,6 +152,82 @@ def test_shell_protocol(
 
     assert result.exit_code == 10
     assert result.output == f"{repo}\n"
+
+
+@pytest.mark.parametrize("shell_active", [False, True])
+@pytest.mark.parametrize("error_number", [errno.EACCES, errno.EROFS, errno.ENOSPC])
+def test_navigation_survives_history_write_errors(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    shell_active: bool,
+    error_number: int,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert runner.invoke(cli, ["add", str(repo)]).exit_code == 0
+    monkeypatch.setenv("PCD_SHELL", "1" if shell_active else "0")
+    error = OSError(error_number, "History write failed")
+
+    def fail_record(_self: UsageHistory, path: Path) -> None:
+        assert path == canonical_path(repo)
+        raise error
+
+    monkeypatch.setattr(UsageHistory, "record", fail_record)
+
+    result = runner.invoke(cli, ["repo"])
+
+    assert result.exit_code == (10 if shell_active else 0)
+    assert result.stdout == f"{canonical_path(repo)}\n"
+    expected_stderr = f"Warning: could not write usage history: {error}\n"
+    if not shell_active:
+        expected_stderr += f"{inactive_shell_message()}\n"
+    assert result.stderr == expected_stderr
+
+
+def test_navigation_survives_unusable_history_directory(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert runner.invoke(cli, ["add", str(repo)]).exit_code == 0
+    history_parent = ProjectCatalog.create().history.path.parent
+    history_parent.parent.mkdir(parents=True, exist_ok=True)
+    history_parent.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setenv("PCD_SHELL", "1")
+
+    result = runner.invoke(cli, ["repo"])
+
+    assert result.exit_code == 10
+    assert result.stdout == f"{canonical_path(repo)}\n"
+    assert result.stderr.startswith("Warning: could not write usage history: ")
+    assert str(history_parent) in result.stderr
+    assert history_parent.read_text(encoding="utf-8") == "not a directory"
+
+
+def test_navigation_does_not_hide_unexpected_history_errors(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert runner.invoke(cli, ["add", str(repo)]).exit_code == 0
+    error = RuntimeError("Unexpected history error")
+
+    def fail_record(_self: UsageHistory, _path: Path) -> None:
+        raise error
+
+    monkeypatch.setattr(UsageHistory, "record", fail_record)
+
+    result = runner.invoke(cli, ["repo"])
+
+    assert result.exit_code == 1
+    assert result.exception is error
+    assert result.stdout == ""
+    assert result.stderr == ""
 
 
 def test_navigation_recommends_shell_install_when_integration_is_absent(
