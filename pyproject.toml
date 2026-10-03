@@ -1,18 +1,19 @@
 [project]
 name = "pcd-cli"
 version = "0.2.3"
-description = "Fast project navigator for Bash, Zsh and Fish"
+description = "Fast project navigator for Bash, Zsh, Fish, PowerShell and CMD"
 readme = { file = "README.txt", content-type = "text/plain" }
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "pcd-cli contributors" }]
 requires-python = ">=3.12,<4"
-keywords = ["cli", "cd", "projects", "navigation", "bash", "zsh", "fish"]
+keywords = ["cli", "cd", "projects", "navigation", "bash", "zsh", "fish", "powershell", "cmd"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

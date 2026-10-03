@@ -12,6 +12,9 @@ Supported shells:
 * Bash
 * Zsh
 * Fish
+* PowerShell (5.1, 7+)
+* Command Prompt (cmd)
+* Git Bash on Windows
 
 
 INSTALL
@@ -21,6 +24,14 @@ Requires Python 3.12 or newer.
     pipx install git+https://github.com/jestenough/pcd.git
     pcd shell install
 Restart your shell after installing shell integration.
+
+On Windows, select the shell explicitly:
+    pcd shell install powershell
+    pcd shell install pwsh
+    pcd shell install cmd
+    pcd shell install bash
+
+Use `bash` for Git Bash. WSL uses the ordinary Linux installation.
 
 
 QUICK START

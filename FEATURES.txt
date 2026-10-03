@@ -78,9 +78,21 @@ SHELL INTEGRATION
         Bash
         Zsh
         Fish
+        PowerShell (5.1, 7+)
+        Command Prompt (cmd)
+        Git Bash on Windows (using the Bash integration)
 
     Install shell integration automatically:
         pcd shell install
+
+    Windows requires an explicit shell:
+        pcd shell install powershell
+        pcd shell install pwsh
+        pcd shell install cmd
+        pcd shell install bash
+
+    CMD installation registers an exact DOSKEY command in the current user's AutoRun
+    value without changing PATH or replacing unrelated AutoRun commands.
 
     Check shell integration status:
         pcd shell status
