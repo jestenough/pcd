@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-from pcd_cli.integrations.shells import startup_file
+from pcd_cli.integrations.shells import startup_file, windows_registry
 from pcd_cli.integrations.shells.common import (
     Shell,
     SHELL_CD_EXIT_CODE,
@@ -14,12 +14,9 @@ from pcd_cli.integrations.shells.common import (
     ShellIntegrationState,
 )
 
-if sys.platform == "win32":
-    import winreg
-
 
 def config_path(shell: Shell, home: Path) -> Path:
-    documents = _documents_path(home)
+    documents = _windows_documents_path(home) if sys.platform == "win32" else home / "Documents"
     if shell is Shell.POWERSHELL:
         return documents / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1"
 
@@ -136,17 +133,12 @@ def _require_supported(shell: Shell) -> None:
         raise ValueError(f"Unsupported PowerShell: {shell}")
 
 
-def _documents_path(home: Path) -> Path:
-    if sys.platform != "win32":
+def _windows_documents_path(home: Path) -> Path:
+    result = windows_registry.read(
+        r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+        "Personal",
+    )
+    if result is None:
         return home / "Documents"
-
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
-        ) as key:
-            value, _value_type = winreg.QueryValueEx(key, "Personal")
-    except FileNotFoundError:
-        return home / "Documents"
-
+    value, _value_type = result
     return Path(os.path.expandvars(str(value)))

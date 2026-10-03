@@ -409,7 +409,7 @@ def test_config_path(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["config", "path"])
 
     assert result.exit_code == 0
-    assert result.output.strip().endswith("pcd-cli/config.toml")
+    assert Path(result.output.strip()).parts[-2:] == ("pcd-cli", "config.toml")
 
 
 def test_config_show_prints_effective_values(runner: CliRunner) -> None:

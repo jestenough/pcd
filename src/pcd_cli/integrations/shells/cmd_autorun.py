@@ -6,13 +6,11 @@ import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
+from pcd_cli.integrations.shells import windows_registry
 from pcd_cli.integrations.shells.common import ShellIntegrationError
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-if sys.platform == "win32":
-    import winreg
 
 _COMMAND_PROCESSOR_KEY = r"Software\Microsoft\Command Processor"
 
@@ -72,23 +70,17 @@ def _without_command(value: str, managed_command: str) -> str | None:
 
 def _read() -> tuple[str, int]:
     _require_windows()
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _COMMAND_PROCESSOR_KEY) as key:
-            value, value_type = winreg.QueryValueEx(key, "AutoRun")
-    except FileNotFoundError:
-        return "", winreg.REG_SZ
-
-    return str(value), value_type
+    result = windows_registry.read(_COMMAND_PROCESSOR_KEY, "AutoRun")
+    return result if result is not None else ("", windows_registry.string_value_type())
 
 
 def _write(value: str, value_type: int) -> None:
     _require_windows()
-    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _COMMAND_PROCESSOR_KEY) as key:
-        if value:
-            winreg.SetValueEx(key, "AutoRun", 0, value_type, value)
-        else:
-            with suppress(FileNotFoundError):
-                winreg.DeleteValue(key, "AutoRun")
+    if value:
+        windows_registry.write(_COMMAND_PROCESSOR_KEY, "AutoRun", value, value_type)
+    else:
+        with suppress(FileNotFoundError):
+            windows_registry.delete(_COMMAND_PROCESSOR_KEY, "AutoRun")
 
 
 def _require_windows() -> None:

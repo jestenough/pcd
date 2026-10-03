@@ -105,9 +105,12 @@ def _select_install_shell(shell: str | None) -> Shell:
     try:
         return detect_shell()
     except ShellIntegrationError as exc:
-        if sys.platform != "win32":
-            raise click.UsageError(str(exc)) from exc
+        if sys.platform == "win32":
+            return _prompt_windows_shell()
+        raise click.UsageError(str(exc)) from exc
 
+
+def _prompt_windows_shell() -> Shell:
     choices = (
         ("PowerShell 7+", Shell.PWSH),
         ("Windows PowerShell 5.1", Shell.POWERSHELL),

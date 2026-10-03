@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Never, TYPE_CHECKING
 
 import pytest
@@ -11,6 +13,7 @@ import pytest
 import pcd_cli.integrations.shell as shell_integration
 import pcd_cli.integrations.shells.cmd as cmd_backend
 import pcd_cli.integrations.shells.cmd_autorun as cmd_autorun
+import pcd_cli.integrations.shells.windows_registry as windows_registry
 from pcd_cli.cli import cli
 from pcd_cli.cli.shell import init_shell
 from pcd_cli.integrations.shell import (
@@ -207,6 +210,61 @@ def test_cmd_autorun_preserves_existing_commands(
     assert written == [f'{current} & call "later.cmd"']
 
 
+def test_cmd_autorun_detects_existing_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wrapper = tmp_path / "pcd.cmd"
+    command = cmd_autorun.doskey_command(wrapper)
+    monkeypatch.setattr(cmd_autorun, "_read", lambda: (command, 1))
+
+    assert cmd_autorun.configured(wrapper) is True
+    assert cmd_autorun.add(wrapper) is False
+
+
+def test_cmd_autorun_ignores_missing_or_embedded_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wrapper = tmp_path / "pcd.cmd"
+    command = cmd_autorun.doskey_command(wrapper)
+    written: list[str] = []
+    monkeypatch.setattr(cmd_autorun, "_write", lambda value, _kind: written.append(value))
+
+    for value in ("other", f"prefix{command}", f"{command}suffix"):
+        monkeypatch.setattr(cmd_autorun, "_read", lambda value=value: (value, 1))
+        assert cmd_autorun.configured(wrapper) is False
+        cmd_autorun.remove(wrapper)
+
+    assert written == []
+
+
+def test_cmd_autorun_registry_io(monkeypatch: pytest.MonkeyPatch) -> None:
+    writes: list[tuple[str, str, str, int]] = []
+    deletes: list[tuple[str, str]] = []
+    monkeypatch.setattr(cmd_autorun, "_require_windows", lambda: None)
+    monkeypatch.setattr(windows_registry, "read", lambda _key, _name: None)
+    monkeypatch.setattr(windows_registry, "string_value_type", lambda: 1)
+    monkeypatch.setattr(
+        windows_registry,
+        "write",
+        lambda key, name, value, kind: writes.append((key, name, value, kind)),
+    )
+    monkeypatch.setattr(
+        windows_registry,
+        "delete",
+        lambda key, name: deletes.append((key, name)),
+    )
+
+    assert cmd_autorun._read() == ("", 1)
+    cmd_autorun._write("command", 2)
+    cmd_autorun._write("", 2)
+
+    key = r"Software\Microsoft\Command Processor"
+    assert writes == [(key, "AutoRun", "command", 2)]
+    assert deletes == [(key, "AutoRun")]
+
+
 def test_cmd_update_restores_wrapper_when_autorun_update_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -329,6 +387,27 @@ def test_shell_detection_does_not_use_windows_detector_on_linux(
     monkeypatch.setattr(shell_integration, "_detect_windows_shell", unexpected_windows_detection)
 
     assert shell_integration.detect_shell() is Shell.BASH
+
+
+def test_windows_shell_detector_is_loaded_lazily(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = ModuleType("shellingham")
+    monkeypatch.setattr(module, "detect_shell", lambda: ("pwsh.exe", "pwsh.exe"), raising=False)
+    monkeypatch.setitem(sys.modules, "shellingham", module)
+
+    assert shell_integration._detect_windows_shell() == "pwsh"
+
+
+def test_windows_shell_detector_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = ModuleType("shellingham")
+
+    def fail() -> Never:
+        raise OSError("process tree unavailable")
+
+    monkeypatch.setattr(module, "detect_shell", fail, raising=False)
+    monkeypatch.setitem(sys.modules, "shellingham", module)
+
+    with pytest.raises(ShellIntegrationError, match="Cannot detect the surrounding Windows shell"):
+        shell_integration._detect_windows_shell()
 
 
 def _raise_shell_detection_error() -> Never:

@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import os
-import pty
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+if os.name != "nt":
+    import pty
+
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX CLI workflow tests")
 
 
 def _pcd_executable() -> Path:
@@ -136,7 +140,7 @@ def test_config_edit_keeps_terminal_attached_through_bash_wrapper(tmp_path: Path
     editor.chmod(0o755)
     environment["EDITOR"] = str(editor)
     environment["PCD_TEST_MARKER"] = str(marker)
-    master_fd, slave_fd = pty.openpty()
+    master_fd, slave_fd = pty.openpty()  # type: ignore[attr-defined, name-defined, unused-ignore]
 
     try:
         result = subprocess.run(
