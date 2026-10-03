@@ -58,6 +58,7 @@ def test_fish_native(runner: CliRunner) -> None:
     assert "fish_source" in result.output
     assert "command env PCD_WRAPPER=fish PCD_SHELL=1 pcd $argv" in result.output
     assert "command env _PCD_COMPLETE=fish_source pcd | source" in result.output
+    assert "printf '%s\\n' $output" in result.output
     assert "env PCD_WRAPPER=fish command pcd" not in result.output
 
 

@@ -105,7 +105,7 @@ def _fish() -> str:
                 return $status
             end
             if test -n "$output"
-                printf '%s\\n' "$output"
+                printf '%s\\n' $output
             end
             return $code
         end
