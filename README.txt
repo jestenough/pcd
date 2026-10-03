@@ -12,6 +12,10 @@ Supported shells:
 * Bash
 * Zsh
 * Fish
+* PowerShell 7+
+* Windows PowerShell 5.1
+* Command Prompt (cmd)
+* Git Bash on Windows
 
 
 INSTALL

@@ -54,8 +54,8 @@ jobs:
       - name: Check types
         run: make typecheck
 
-  tests:
-    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+  test-unix:
+    name: Tests (${{ matrix.platform }}, Python ${{ matrix.python }})
     needs: quality
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -65,12 +65,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform: Linux
             python: "3.12"
           - os: ubuntu-latest
+            platform: Linux
             python: "3.13"
           - os: ubuntu-latest
+            platform: Linux
             python: "3.14"
           - os: macos-latest
+            platform: macOS
             python: "3.14"
 
     steps:
@@ -105,9 +109,76 @@ jobs:
       - name: Run tests
         run: make cov
 
+  test-windows:
+    name: Tests (Windows, Python ${{ matrix.python }})
+    needs: quality
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: true
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          check-latest: true
+
+      - name: Require Windows shells
+        shell: pwsh
+        run: |
+          Get-Command powershell.exe -ErrorAction Stop
+          Get-Command pwsh.exe -ErrorAction Stop
+          Get-Command cmd.exe -ErrorAction Stop
+          $gitBash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+          if (-not (Test-Path $gitBash)) {
+            throw "Git Bash is missing: $gitBash"
+          }
+
+      - name: Install package and test tools
+        id: install_tools
+        run: python -m pip install . "pytest==9.1.1" "mypy==2.3.1"
+
+      - name: Check Windows types
+        run: python -m mypy src
+
+      - name: Run Windows tests
+        run: python -m pytest -q
+
+      - name: Test Git Bash integration
+        shell: pwsh
+        run: |
+          $gitBash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+          & $gitBash -lc 'eval "$(pcd shell init bash)"; type pcd >/dev/null; pcd --version'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Git Bash integration failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Test CMD registration
+        shell: pwsh
+        run: |
+          pcd shell install cmd
+          pcd shell status cmd
+          $key = "HKCU:\Software\Microsoft\Command Processor"
+          $autoRun = (Get-ItemProperty -Path $key -Name AutoRun).AutoRun
+          if ($autoRun -notmatch 'doskey pcd=') {
+            throw "The pcd DOSKEY macro was not registered in CMD AutoRun"
+          }
+
+      - name: Remove test CMD registration
+        if: ${{ always() && steps.install_tools.outcome == 'success' }}
+        shell: pwsh
+        run: pcd shell uninstall cmd
+
   benchmarks:
     name: Benchmarks
-    needs: tests
+    needs: test-unix
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -137,7 +208,7 @@ jobs:
 
   package:
     name: Package
-    needs: tests
+    needs: [test-unix, test-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

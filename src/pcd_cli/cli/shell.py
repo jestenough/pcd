@@ -1,3 +1,5 @@
+import sys
+
 import click
 
 from pcd_cli.integrations.shell import (
@@ -24,7 +26,8 @@ def shell_commands() -> None:
 )
 def install_shell(shell: str | None) -> None:
     """Install persistent shell integration into the shell startup file."""
-    integration = _shell_integration(shell)
+    selected = _select_shell(shell, prompt=True)
+    integration = ShellIntegration.for_shell(selected)
     if integration.install():
         click.echo(f"Installed {integration.shell.value} integration in {integration.config_path}")
         click.echo(f"Reload the current shell with: {integration.reload_command()}")
@@ -48,7 +51,7 @@ def install_shell(shell: str | None) -> None:
 )
 def shell_status(shell: str | None) -> None:
     """Show shell configuration and whether this invocation used a wrapper."""
-    integration = _shell_integration(shell)
+    integration = ShellIntegration.for_shell(_select_shell(shell))
     click.echo(f"Shell: {integration.shell.value}")
     click.echo(f"Config: {integration.config_path}")
     click.echo(f"Configured: {integration.state().value}")
@@ -66,7 +69,7 @@ def shell_status(shell: str | None) -> None:
 )
 def uninstall_shell(shell: str | None) -> None:
     """Remove integration installed by `pcd shell install`."""
-    integration = _shell_integration(shell)
+    integration = ShellIntegration.for_shell(_select_shell(shell))
     if integration.uninstall():
         click.echo(f"Removed shell integration from {integration.config_path}")
         return
@@ -85,30 +88,40 @@ def uninstall_shell(shell: str | None) -> None:
     required=False,
     type=click.Choice([item.value for item in Shell], case_sensitive=False),
 )
-@click.pass_context
-def init_shell(ctx: click.Context, shell: str | None) -> None:
+def init_shell(shell: str | None) -> None:
     """Print shell integration for manual dotfile management."""
-    selected = _selected_shell(shell)
-    click.echo(render_shell_integration(selected, _registered_command_names(ctx)), nl=False)
+    selected = _select_shell(shell)
+    click.echo(render_shell_integration(selected), nl=False)
 
 
-def _shell_integration(shell: str | None) -> ShellIntegration:
-    return ShellIntegration.for_shell(_selected_shell(shell))
-
-
-def _selected_shell(shell: str | None) -> Shell:
+def _select_shell(shell: str | None, *, prompt: bool = False) -> Shell:
     if shell is not None:
         return Shell(shell.casefold())
 
     try:
         return detect_shell()
     except ShellIntegrationError as exc:
+        if prompt and sys.platform == "win32":
+            return _prompt_windows_shell()
         raise click.UsageError(str(exc)) from exc
 
 
-def _registered_command_names(ctx: click.Context) -> tuple[str, ...]:
-    root = ctx.find_root()
-    if not isinstance(root.command, click.Group):
-        return ()
+def _prompt_windows_shell() -> Shell:
+    choices = (
+        ("PowerShell 7+", Shell.PWSH),
+        ("Windows PowerShell 5.1", Shell.POWERSHELL),
+        ("Command Prompt (cmd)", Shell.CMD),
+        ("Git Bash", Shell.BASH),
+    )
 
-    return tuple(root.command.list_commands(root))
+    click.echo("Select shell:")
+    for index, (label, _shell) in enumerate(choices, start=1):
+        click.echo(f"  {index}. {label}")
+
+    choice = click.prompt(
+        "Enter number",
+        type=click.IntRange(1, len(choices)),
+        show_choices=False,
+    )
+
+    return choices[choice - 1][1]

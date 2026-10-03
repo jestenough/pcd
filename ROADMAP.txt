@@ -1,34 +1,31 @@
 PCD ROADMAP
 ===========
 
-Current release: 0.2.2. Next release: 0.2.3.
+Current release: 0.2.3. Next release: 0.2.4.
 Work through releases in the order below. Within each release, follow the listed order.
-Versions after 0.2.3 are planning targets, not fixed delivery dates.
+Versions after 0.2.4 are planning targets, not fixed delivery dates.
 Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
 
 
-0.2.3 - SHELL UPDATE AND BUG FIXES
----------------------------------
+0.2.4 - WINDOWS SHELL SUPPORT
+-----------------------------
 
-ALREADY MERGED SINCE 0.2.2
-    Show a reload command after shell integration installation.
-    Test installation separately for Bash, Zsh, and Fish.
-    Replace `pcd shell print` and `pcd shell-init` with `pcd shell init`.
-    Move shell implementation to `pcd_cli.integrations.shell`.
+    1. Support Windows PowerShell 5.1 and PowerShell 7+ with native wrappers.
+    2. Support Command Prompt through a managed wrapper and a user-level DOSKEY AutoRun entry.
+       Preserve unrelated AutoRun commands and never modify the shared PATH.
+    3. Support Git Bash through the Bash backend and keep WSL on the Linux integration path.
+    4. Use cross-platform inter-process file locking for configuration and cache writes.
+    5. Keep manual `pcd shell init <shell>` setup available for every supported shell.
+    6. Test PowerShell, CMD, Git Bash, registry setup, rollback, and package contents on Windows.
 
 RELEASE ACCEPTANCE
-    Documentation and automated release gates are implemented.
-    Publish only after the tag-triggered checks pass on the exact release commit:
-    quality, tests, supported-shell E2E, build, wheel smoke, and tag/version validation.
-    Exact discovery-root counts require a cache schema change and are deferred to 0.2.5.
-
-RELEASE NOTE
-    The planned 0.2.3 includes intentional compatibility breaks already merged into master.
-    Do not describe it as fully backward-compatible with 0.2.2.
-    Automatic migration of existing shell blocks is intentionally out of scope.
+    Existing Linux and macOS checks remain green.
+    The dedicated Windows job passes on windows-latest with Windows PowerShell 5.1, PowerShell 7+,
+    CMD, Git Bash, package installation, type checking, and cleanup.
+    The wheel includes every shell and locking backend.
 
 
-0.2.4 - PERFORMANCE
+0.2.5 - PERFORMANCE
 -------------------
 
     1. Establish benchmark baselines before changing algorithms.
@@ -39,7 +36,7 @@ RELEASE NOTE
     2. Avoid repeated cache/history loads and repeated ranking within one CLI operation.
     3. Avoid scanning all roots twice during `pcd add`.
        Preserve conflict detection and config/cache correctness.
-    4. Expand shell E2E coverage beyond the behavior changed in 0.2.3.
+    4. Expand shell E2E coverage beyond the behavior changed in 0.2.4.
     5. Compare end-to-end latency and memory with the baseline.
        Retain optimizations only when they improve measured behavior without regressions.
 
@@ -48,7 +45,7 @@ CONSTRAINTS
     Do not introduce a new database or background service in this release.
 
 
-0.2.5 - DATA RELIABILITY
+0.2.6 - DATA RELIABILITY
 ------------------------
 
     1. Test concurrent configuration mutations and cache publication together.
