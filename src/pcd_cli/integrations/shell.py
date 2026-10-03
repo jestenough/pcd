@@ -80,7 +80,7 @@ def _detect_windows_shell() -> str:
         detected: tuple[str, str] = shellingham.detect_shell()
     except OSError as exc:
         raise ShellIntegrationError("Cannot detect the surrounding Windows shell") from exc
-    
+
     name, _executable = detected
     return name.casefold().removesuffix(".exe")
 
