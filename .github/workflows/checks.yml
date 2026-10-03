@@ -55,7 +55,7 @@ jobs:
         run: make typecheck
 
   test-unix:
-    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    name: Tests (${{ matrix.platform }}, Python ${{ matrix.python }})
     needs: quality
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -65,12 +65,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform: Linux
             python: "3.12"
           - os: ubuntu-latest
+            platform: Linux
             python: "3.13"
           - os: ubuntu-latest
+            platform: Linux
             python: "3.14"
           - os: macos-latest
+            platform: macOS
             python: "3.14"
 
     steps:
