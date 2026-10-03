@@ -68,11 +68,14 @@ def package_version() -> str:
 @click.pass_context
 def cli(ctx: click.Context, project_name: str | None) -> None:
     """Jump to local projects by name."""
-    catalog = ProjectCatalog.create()
-    ctx.obj = catalog
-
     if project_name is not None and ctx.invoked_subcommand is not None:
         raise click.UsageError("--project cannot be combined with a command")
+
+    if ctx.invoked_subcommand == "shell":
+        return
+
+    catalog = ProjectCatalog.create()
+    ctx.obj = catalog
 
     if ctx.invoked_subcommand is not None:
         return
@@ -103,5 +106,5 @@ def main() -> None:
         click.echo(f"Shell integration error: {exc}", err=True)
         raise SystemExit(ExitCode.ERROR) from None
     except OSError as exc:
-        click.echo(f"Filesystem error: {exc}", err=True)
+        click.echo(f"I/O error: {exc}", err=True)
         raise SystemExit(ExitCode.ERROR) from None

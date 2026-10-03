@@ -32,18 +32,33 @@ class ShellIntegration:
         return cls(shell=shell, config_path=shell_config_path(shell))
 
     def state(self) -> ShellIntegrationState:
-        return backend_for(self.shell).state(self.shell, self.config_path)
+        if self.shell is Shell.CMD:
+            from pcd_cli.integrations.shells import cmd
+
+            return cmd.state(self.config_path)
+        return startup_file.state(self.config_path, self.shell)
 
     def reload_command(self) -> str:
         return backend_for(self.shell).reload_command(self.shell, self.config_path)
 
     def install(self) -> bool:
         """Install managed integration. Return whether persistent state changed."""
-        return backend_for(self.shell).install(self.shell, self.config_path)
+        if self.shell is Shell.CMD:
+            from pcd_cli.integrations.shells import cmd
+
+            return cmd.install(self.config_path)
+        command = backend_for(self.shell).startup_command(self.shell)
+        if command is None:
+            raise ShellIntegrationError(f"Shell does not use a startup file: {self.shell}")
+        return startup_file.install(self.config_path, self.shell, command)
 
     def uninstall(self) -> bool:
         """Remove only integration installed by pcd, leaving manual setup untouched."""
-        return backend_for(self.shell).uninstall(self.shell, self.config_path)
+        if self.shell is Shell.CMD:
+            from pcd_cli.integrations.shells import cmd
+
+            return cmd.uninstall(self.config_path)
+        return startup_file.uninstall(self.config_path)
 
 
 def detect_shell() -> Shell:
@@ -53,7 +68,9 @@ def detect_shell() -> Shell:
         return wrapper
 
     if sys.platform == "win32":
-        name = _detect_windows_shell()
+        from pcd_cli.integrations.shells import windows_shell
+
+        name = windows_shell.detect_shell()
         source = "the parent process"
     else:
         executable = os.environ.get("SHELL", "")
@@ -67,22 +84,6 @@ def detect_shell() -> Shell:
         raise ShellIntegrationError(
             f"Cannot detect a supported shell from {source}; choose one of: {supported}"
         ) from exc
-
-
-def _detect_windows_shell() -> str:
-    """Load Shellingham only when native Windows detection is required."""
-    try:
-        import shellingham  # type: ignore[import-not-found]
-    except ModuleNotFoundError as exc:
-        raise ShellIntegrationError("Windows shell detection is unavailable") from exc
-
-    try:
-        detected: tuple[str, str] = shellingham.detect_shell()
-    except OSError as exc:
-        raise ShellIntegrationError("Cannot detect the surrounding Windows shell") from exc
-
-    name, _executable = detected
-    return name.casefold().removesuffix(".exe")
 
 
 def shell_config_path(shell: Shell) -> Path:

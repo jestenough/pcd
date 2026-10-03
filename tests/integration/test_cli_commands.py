@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,8 @@ from pcd_cli.cli import cli
 from pcd_cli.models import Project, ProjectSource
 
 if TYPE_CHECKING:
+    from typing import TextIO
+
     from click.testing import CliRunner
 
 
@@ -447,6 +450,34 @@ def test_config_edit_uses_visual_and_creates_config(
     assert result.exit_code == 0
     assert calls == [["code", "--wait", str(config_path)]]
     assert config_path.is_file()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_config_edit_preserves_wrapper_terminal_without_retry(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    fails: bool,
+) -> None:
+    calls: list[list[str]] = []
+
+    def run_editor(
+        args: list[str], *, check: bool, stdout: TextIO
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        assert check is False
+        assert stdout is sys.stderr
+        if fails:
+            raise OSError("editor failed to start")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setenv("PCD_SHELL", "1")
+    monkeypatch.setenv("VISUAL", "editor")
+    monkeypatch.setattr("pcd_cli.cli.config.subprocess.run", run_editor)
+
+    result = runner.invoke(cli, ["config", "edit"])
+
+    assert result.exit_code == (1 if fails else 0)
+    assert len(calls) == 1
 
 
 def test_config_edit_prefers_configured_editor(

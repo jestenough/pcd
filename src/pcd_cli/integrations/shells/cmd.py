@@ -3,7 +3,6 @@
 import os
 import stat
 import sys
-from contextlib import suppress
 from pathlib import Path
 from textwrap import dedent
 
@@ -22,24 +21,20 @@ _MANAGED_HEADER = "@echo off\nrem Managed by pcd. Changes will be overwritten.\n
 
 
 def config_path(shell: Shell, home: Path) -> Path:
-    _require_supported(shell)
     local_app_data = os.environ.get("LOCALAPPDATA")
     data_home = Path(local_app_data) if local_app_data else home / "AppData" / "Local"
     return data_home / "pcd-cli" / "cmd" / "pcd.cmd"
 
 
 def reload_command(shell: Shell, wrapper: Path) -> str:
-    _require_supported(shell)
     return cmd_autorun.doskey_command(wrapper)
 
 
 def startup_command(shell: Shell) -> None:
-    _require_supported(shell)
     return None
 
 
-def state(shell: Shell, wrapper: Path) -> ShellIntegrationState:
-    _require_supported(shell)
+def state(wrapper: Path) -> ShellIntegrationState:
     _require_windows("inspected")
 
     if not wrapper.exists():
@@ -61,61 +56,39 @@ def state(shell: Shell, wrapper: Path) -> ShellIntegrationState:
     return ShellIntegrationState.MANAGED
 
 
-def install(shell: Shell, wrapper: Path) -> bool:
-    _require_supported(shell)
+def install(wrapper: Path) -> bool:
     _require_windows("installed")
 
-    content = render(shell)
+    content = render(Shell.CMD)
 
     with file_lock(wrapper):
-        if wrapper.exists():
-            previous_content = _read(wrapper)
-            if not _is_managed(previous_content):
-                return False
+        previous = _read(wrapper) if wrapper.exists() else None
+        if previous is not None and not _is_managed(previous):
+            return False
 
-            changed = False
-            added_to_autorun = False
-
-            try:
-                if previous_content != content:
-                    _write(wrapper, content)
-                    changed = True
-
-                if not cmd_autorun.configured(wrapper):
-                    added_to_autorun = cmd_autorun.add(wrapper)
-                    if added_to_autorun:
-                        changed = True
-            except BaseException:
-                if added_to_autorun:
-                    with suppress(OSError, ShellIntegrationError):
-                        cmd_autorun.remove(wrapper)
-
-                if changed:
-                    with suppress(OSError):
-                        _write(wrapper, previous_content)
-
-                raise
-
-            return changed
-
-        added_to_autorun = False
-
+        wrapper_changed = previous != content
         try:
-            _write(wrapper, content)
-            added_to_autorun = cmd_autorun.add(wrapper)
-        except BaseException:
-            if added_to_autorun:
-                with suppress(OSError, ShellIntegrationError):
-                    cmd_autorun.remove(wrapper)
-
-            wrapper.unlink(missing_ok=True)
+            if wrapper_changed:
+                _write(wrapper, content)
+            autorun_changed = cmd_autorun.add(wrapper)
+        except BaseException as error:
+            if wrapper_changed:
+                try:
+                    if previous is None:
+                        wrapper.unlink(missing_ok=True)
+                    else:
+                        _write(wrapper, previous)
+                except OSError as rollback_error:
+                    raise ShellIntegrationError(
+                        f"CMD installation failed: {error}; "
+                        f"could not restore wrapper {wrapper}: {rollback_error}"
+                    ) from error
             raise
 
-        return True
+        return wrapper_changed or autorun_changed
 
 
-def uninstall(shell: Shell, wrapper: Path) -> bool:
-    _require_supported(shell)
+def uninstall(wrapper: Path) -> bool:
     _require_windows("uninstalled")
 
     with file_lock(wrapper):
@@ -130,13 +103,22 @@ def uninstall(shell: Shell, wrapper: Path) -> bool:
             return False
 
         cmd_autorun.remove(wrapper)
-        wrapper.unlink(missing_ok=True)
+        try:
+            wrapper.unlink(missing_ok=True)
+        except OSError as error:
+            try:
+                cmd_autorun.add(wrapper)
+            except (OSError, ShellIntegrationError) as rollback_error:
+                raise ShellIntegrationError(
+                    f"Could not remove CMD wrapper {wrapper}: {error}; "
+                    f"could not restore AutoRun: {rollback_error}"
+                ) from error
+            raise
 
         return True
 
 
 def render(shell: Shell) -> str:
-    _require_supported(shell)
     return dedent(
         f"""\
         @echo off
@@ -152,20 +134,15 @@ def render(shell: Shell) -> str:
         call "%_PCD_EXECUTABLE%" %* > "%pcd_output%"
         set "pcd_code=%ERRORLEVEL%"
         if "%pcd_code%"=="{SHELL_CD_EXIT_CODE}" goto pcd_change_directory
-        if not "%pcd_code%"=="0" goto pcd_error
         type "%pcd_output%"
         del /q "%pcd_output%"
-        endlocal & exit /b 0
+        endlocal & exit /b %pcd_code%
 
         :pcd_change_directory
         set /p "pcd_destination=" < "%pcd_output%"
         del /q "%pcd_output%"
         endlocal & cd /d "%pcd_destination%"
         exit /b %ERRORLEVEL%
-
-        :pcd_error
-        del /q "%pcd_output%"
-        endlocal & exit /b %pcd_code%
 
         :pcd_direct
         call "%_PCD_EXECUTABLE%" %*
@@ -197,8 +174,3 @@ def _is_managed(content: str) -> bool:
 def _require_windows(action: str) -> None:
     if sys.platform != "win32":
         raise ShellIntegrationError(f"CMD integration can only be {action} on Windows")
-
-
-def _require_supported(shell: Shell) -> None:
-    if shell is not Shell.CMD:
-        raise ValueError(f"Unsupported CMD shell: {shell}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 import click
@@ -55,7 +56,11 @@ def edit_config(catalog: ProjectCatalog) -> None:
 
     catalog.config.ensure_exists()
 
-    result = subprocess.run([*command, str(catalog.config.path)], check=False)
+    arguments = [*command, str(catalog.config.path)]
+    if os.environ.get("PCD_SHELL") == "1":
+        result = subprocess.run(arguments, check=False, stdout=sys.stderr)
+    else:
+        result = subprocess.run(arguments, check=False)
     if result.returncode:
         raise click.ClickException(f"Editor exited with status {result.returncode}")
 

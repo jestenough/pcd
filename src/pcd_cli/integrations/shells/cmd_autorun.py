@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
 from pcd_cli.integrations.shells import windows_registry
-from pcd_cli.integrations.shells.common import ShellIntegrationError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,36 +51,28 @@ def _without_command(value: str, managed_command: str) -> str | None:
 
     before = value[:index]
     after = value[index + len(managed_command) :]
-    if before:
-        if not before.endswith(" & "):
-            return None
+    if before and not before.endswith(" & "):
+        return None
+    if after and not after.startswith(" & "):
+        return None
 
+    if before:
         return f"{before[:-3]}{after}"
 
     if after:
-        if not after.startswith(" & "):
-            return None
-
         return after[3:]
 
     return ""
 
 
 def _read() -> tuple[str, int]:
-    _require_windows()
     result = windows_registry.read(_COMMAND_PROCESSOR_KEY, "AutoRun")
     return result if result is not None else ("", windows_registry.string_value_type())
 
 
 def _write(value: str, value_type: int) -> None:
-    _require_windows()
     if value:
         windows_registry.write(_COMMAND_PROCESSOR_KEY, "AutoRun", value, value_type)
     else:
         with suppress(FileNotFoundError):
             windows_registry.delete(_COMMAND_PROCESSOR_KEY, "AutoRun")
-
-
-def _require_windows() -> None:
-    if sys.platform != "win32":
-        raise ShellIntegrationError("CMD AutoRun can only be managed on Windows")

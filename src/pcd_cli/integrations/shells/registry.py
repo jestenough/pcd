@@ -2,71 +2,36 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import Protocol, TYPE_CHECKING
 
-from pcd_cli.integrations.shells import cmd, powershell, unix
 from pcd_cli.integrations.shells.common import Shell
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
 
-    from pcd_cli.integrations.shells.common import ShellIntegrationState
 
+class ShellBackend(Protocol):
+    def config_path(self, shell: Shell, home: Path) -> Path: ...
 
-@dataclass(frozen=True, slots=True)
-class ShellBackend:
-    config_path: Callable[[Shell, Path], Path]
-    reload_command: Callable[[Shell, Path], str]
-    startup_command: Callable[[Shell], str | None]
-    render: Callable[[Shell], str]
-    state: Callable[[Shell, Path], ShellIntegrationState]
-    install: Callable[[Shell, Path], bool]
-    uninstall: Callable[[Shell, Path], bool]
+    def reload_command(self, shell: Shell, path: Path) -> str: ...
 
+    def startup_command(self, shell: Shell) -> str | None: ...
 
-_UNIX = ShellBackend(
-    config_path=unix.config_path,
-    reload_command=unix.reload_command,
-    startup_command=unix.startup_command,
-    render=unix.render,
-    state=unix.state,
-    install=unix.install,
-    uninstall=unix.uninstall,
-)
-_POWERSHELL = ShellBackend(
-    config_path=powershell.config_path,
-    reload_command=powershell.reload_command,
-    startup_command=powershell.startup_command,
-    render=powershell.render,
-    state=powershell.state,
-    install=powershell.install,
-    uninstall=powershell.uninstall,
-)
-_CMD = ShellBackend(
-    config_path=cmd.config_path,
-    reload_command=cmd.reload_command,
-    startup_command=cmd.startup_command,
-    render=cmd.render,
-    state=cmd.state,
-    install=cmd.install,
-    uninstall=cmd.uninstall,
-)
-
-
-_BACKENDS: dict[Shell, ShellBackend] = {
-    Shell.BASH: _UNIX,
-    Shell.ZSH: _UNIX,
-    Shell.FISH: _UNIX,
-    Shell.POWERSHELL: _POWERSHELL,
-    Shell.PWSH: _POWERSHELL,
-    Shell.CMD: _CMD,
-}
+    def render(self, shell: Shell) -> str: ...
 
 
 def backend_for(shell: Shell) -> ShellBackend:
-    try:
-        return _BACKENDS[shell]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported shell: {shell}") from exc
+    """Load only the requested backend; Python caches the module itself."""
+    if shell in (Shell.BASH, Shell.ZSH, Shell.FISH):
+        from pcd_cli.integrations.shells import unix
+
+        return unix
+    if shell in (Shell.POWERSHELL, Shell.PWSH):
+        from pcd_cli.integrations.shells import powershell
+
+        return powershell
+    if shell is Shell.CMD:
+        from pcd_cli.integrations.shells import cmd
+
+        return cmd
+    raise ValueError(f"Unsupported shell: {shell}")

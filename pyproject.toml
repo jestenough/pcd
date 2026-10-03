@@ -109,5 +109,5 @@ fail_under = 95
 show_missing = true
 skip_covered = true
 exclude_also = [
-    "if TYPE_CHECKING:",
+    "if TYPE_CHECKING",
 ]

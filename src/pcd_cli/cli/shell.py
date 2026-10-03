@@ -26,7 +26,7 @@ def shell_commands() -> None:
 )
 def install_shell(shell: str | None) -> None:
     """Install persistent shell integration into the shell startup file."""
-    selected = _select_install_shell(shell)
+    selected = _select_shell(shell, prompt=True)
     integration = ShellIntegration.for_shell(selected)
     if integration.install():
         click.echo(f"Installed {integration.shell.value} integration in {integration.config_path}")
@@ -51,7 +51,7 @@ def install_shell(shell: str | None) -> None:
 )
 def shell_status(shell: str | None) -> None:
     """Show shell configuration and whether this invocation used a wrapper."""
-    integration = _shell_integration(shell)
+    integration = ShellIntegration.for_shell(_select_shell(shell))
     click.echo(f"Shell: {integration.shell.value}")
     click.echo(f"Config: {integration.config_path}")
     click.echo(f"Configured: {integration.state().value}")
@@ -69,7 +69,7 @@ def shell_status(shell: str | None) -> None:
 )
 def uninstall_shell(shell: str | None) -> None:
     """Remove integration installed by `pcd shell install`."""
-    integration = _shell_integration(shell)
+    integration = ShellIntegration.for_shell(_select_shell(shell))
     if integration.uninstall():
         click.echo(f"Removed shell integration from {integration.config_path}")
         return
@@ -90,22 +90,18 @@ def uninstall_shell(shell: str | None) -> None:
 )
 def init_shell(shell: str | None) -> None:
     """Print shell integration for manual dotfile management."""
-    selected = _selected_shell(shell)
+    selected = _select_shell(shell)
     click.echo(render_shell_integration(selected), nl=False)
 
 
-def _shell_integration(shell: str | None) -> ShellIntegration:
-    return ShellIntegration.for_shell(_selected_shell(shell))
-
-
-def _select_install_shell(shell: str | None) -> Shell:
+def _select_shell(shell: str | None, *, prompt: bool = False) -> Shell:
     if shell is not None:
-        return _selected_shell(shell)
+        return Shell(shell.casefold())
 
     try:
         return detect_shell()
     except ShellIntegrationError as exc:
-        if sys.platform == "win32":
+        if prompt and sys.platform == "win32":
             return _prompt_windows_shell()
         raise click.UsageError(str(exc)) from exc
 
@@ -122,20 +118,10 @@ def _prompt_windows_shell() -> Shell:
     for index, (label, _shell) in enumerate(choices, start=1):
         click.echo(f"  {index}. {label}")
 
-    selected = click.prompt(
+    choice = click.prompt(
         "Enter number",
         type=click.IntRange(1, len(choices)),
         show_choices=False,
     )
 
-    return choices[selected - 1][1]
-
-
-def _selected_shell(shell: str | None) -> Shell:
-    if shell is not None:
-        return Shell(shell.casefold())
-
-    try:
-        return detect_shell()
-    except ShellIntegrationError as exc:
-        raise click.UsageError(str(exc)) from exc
+    return choices[choice - 1][1]

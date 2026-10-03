@@ -5,17 +5,20 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-from pcd_cli.integrations.shells import startup_file, windows_registry
+from pcd_cli.integrations.shells import windows_registry
 from pcd_cli.integrations.shells.common import (
     Shell,
     SHELL_CD_EXIT_CODE,
     SHELL_MODE_ENV,
     SHELL_WRAPPER_ENV,
-    ShellIntegrationState,
 )
 
 
 def config_path(shell: Shell, home: Path) -> Path:
+    if sys.platform != "win32" and shell is Shell.PWSH:
+        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config").expanduser()
+        return config_home / "powershell" / "Microsoft.PowerShell_profile.ps1"
+
     documents = _windows_documents_path(home) if sys.platform == "win32" else home / "Documents"
     if shell is Shell.POWERSHELL:
         return documents / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1"
@@ -27,32 +30,15 @@ def config_path(shell: Shell, home: Path) -> Path:
 
 
 def reload_command(shell: Shell, path: Path) -> str:
-    _require_supported(shell)
     escaped = str(path).replace("'", "''")
     return f". '{escaped}'"
 
 
 def startup_command(shell: Shell) -> str:
-    _require_supported(shell)
     return f"pcd shell init {shell.value} | Out-String | Invoke-Expression"
 
 
-def state(shell: Shell, path: Path) -> ShellIntegrationState:
-    _require_supported(shell)
-    return startup_file.state(path, shell)
-
-
-def install(shell: Shell, path: Path) -> bool:
-    return startup_file.install(path, shell, startup_command(shell))
-
-
-def uninstall(shell: Shell, path: Path) -> bool:
-    _require_supported(shell)
-    return startup_file.uninstall(path)
-
-
 def render(shell: Shell) -> str:
-    _require_supported(shell)
     return dedent(
         f"""\
         function pcd {{
@@ -126,11 +112,6 @@ def render(shell: Shell) -> str:
         }}
         """
     )
-
-
-def _require_supported(shell: Shell) -> None:
-    if shell not in (Shell.POWERSHELL, Shell.PWSH):
-        raise ValueError(f"Unsupported PowerShell: {shell}")
 
 
 def _windows_documents_path(home: Path) -> Path:
