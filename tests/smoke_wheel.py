@@ -32,6 +32,9 @@ def smoke_wheel(expected_version: str) -> None:
             environment.pop(name, None)
         environment.update(
             HOME=str(home),
+            USERPROFILE=str(home),
+            APPDATA=str(root / "roaming"),
+            LOCALAPPDATA=str(root / "local"),
             XDG_CONFIG_HOME=str(root / "config"),
             XDG_CACHE_HOME=str(root / "cache"),
             XDG_STATE_HOME=str(root / "state"),
@@ -60,7 +63,7 @@ def smoke_wheel(expected_version: str) -> None:
         assert json.loads(run("list", "--json")) == [
             {"name": "repo", "path": str(repo), "source": "discovered", "status": "available"}
         ]
-        for shell in ("bash", "zsh", "fish"):
+        for shell in ("bash", "zsh", "fish", "powershell", "pwsh", "cmd"):
             assert "pcd" in run("shell", "init", shell)
         environment["PCD_SHELL"] = "1"
         assert run("repo", exit_code=10) == f"{repo}\n"

@@ -85,11 +85,10 @@ def uninstall_shell(shell: str | None) -> None:
     required=False,
     type=click.Choice([item.value for item in Shell], case_sensitive=False),
 )
-@click.pass_context
-def init_shell(ctx: click.Context, shell: str | None) -> None:
+def init_shell(shell: str | None) -> None:
     """Print shell integration for manual dotfile management."""
     selected = _selected_shell(shell)
-    click.echo(render_shell_integration(selected, _registered_command_names(ctx)), nl=False)
+    click.echo(render_shell_integration(selected), nl=False)
 
 
 def _shell_integration(shell: str | None) -> ShellIntegration:
@@ -104,11 +103,3 @@ def _selected_shell(shell: str | None) -> Shell:
         return detect_shell()
     except ShellIntegrationError as exc:
         raise click.UsageError(str(exc)) from exc
-
-
-def _registered_command_names(ctx: click.Context) -> tuple[str, ...]:
-    root = ctx.find_root()
-    if not isinstance(root.command, click.Group):
-        return ()
-
-    return tuple(root.command.list_commands(root))

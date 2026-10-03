@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import click
 import pytest
 
+import pcd_cli.integrations.shells.cmd as cmd_backend
+import pcd_cli.integrations.shells.cmd_autorun as cmd_autorun
 from pcd_cli.cli import cli
 from pcd_cli.cli.shell import init_shell
 from pcd_cli.integrations.shell import (
@@ -54,6 +56,37 @@ def test_fish_native(runner: CliRunner) -> None:
     assert "env PCD_SHELL=1 command pcd" not in result.output
 
 
+def test_powershell_native(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["shell", "init", "powershell"])
+
+    assert result.exit_code == 0
+    assert "function pcd" in result.output
+    assert "powershell_source" in result.output
+    assert "$env:PCD_WRAPPER = 'powershell'" in result.output
+    assert "$env:PCD_SHELL = '1'" in result.output
+    assert "Set-Location -LiteralPath" in result.output
+    assert "-eq 10" in result.output
+
+
+def test_pwsh_native(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["shell", "init", "pwsh"])
+
+    assert result.exit_code == 0
+    assert "function pcd" in result.output
+    assert "$env:PCD_WRAPPER = 'pwsh'" in result.output
+    assert "powershell_source" in result.output
+
+
+def test_cmd_native(runner: CliRunner) -> None:
+    result = runner.invoke(cli, ["shell", "init", "cmd"])
+
+    assert result.exit_code == 0
+    assert "@echo off" in result.output
+    assert 'set "PCD_WRAPPER=cmd"' in result.output
+    assert "cd /d" in result.output
+    assert "pcd.exe" in result.output
+
+
 def test_shell_init_can_render_as_standalone_command(runner: CliRunner) -> None:
     result = runner.invoke(init_shell, ["bash"])
 
@@ -61,27 +94,28 @@ def test_shell_init_can_render_as_standalone_command(runner: CliRunner) -> None:
     assert "bash_source" in result.output
 
 
-@pytest.mark.parametrize("shell", list(Shell))
-def test_shell_wrapper_uses_registered_root_commands(
+def test_shell_mode_does_not_change_regular_cli_commands(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
-    shell: Shell,
 ) -> None:
-    commands = {**cli.commands, "interactive": click.Command("interactive")}
-    monkeypatch.setattr(cli, "commands", commands)
+    monkeypatch.setenv("PCD_SHELL", "1")
 
-    result = runner.invoke(cli, ["shell", "init", shell.value])
+    result = runner.invoke(cli, ["config", "path"])
 
     assert result.exit_code == 0
-    assert "interactive" in result.output
+    assert result.output.strip()
 
 
 def test_render_rejects_unsupported_shell() -> None:
     with pytest.raises(ValueError, match="Unsupported shell"):
-        render_shell_integration("powershell")  # type: ignore[arg-type]
+        render_shell_integration("nushell")  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("shell", list(Shell), ids=lambda shell: shell.value)
+@pytest.mark.parametrize(
+    "shell",
+    [shell for shell in Shell if shell is not Shell.CMD],
+    ids=lambda shell: shell.value,
+)
 def test_shell_install_supports_each_shell(runner: CliRunner, shell: Shell) -> None:
     integration = ShellIntegration.for_shell(shell)
 
@@ -91,6 +125,136 @@ def test_shell_install_supports_each_shell(runner: CliRunner, shell: Shell) -> N
     assert f"Installed {shell.value} integration" in result.output
     assert f"Reload the current shell with: {integration.reload_command()}" in result.output
     assert f"pcd shell init {shell.value}" in integration.config_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows CMD installation test")
+def test_shell_install_supports_cmd(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    added: list[Path] = []
+    removed: list[Path] = []
+    registered = False
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+
+    def add_to_autorun(path: Path) -> bool:
+        nonlocal registered
+        added.append(path)
+        registered = True
+        return True
+
+    def remove_from_autorun(path: Path) -> None:
+        nonlocal registered
+        removed.append(path)
+        registered = False
+
+    monkeypatch.setattr("pcd_cli.integrations.shells.cmd_autorun.add", add_to_autorun)
+    monkeypatch.setattr(
+        "pcd_cli.integrations.shells.cmd_autorun.configured",
+        lambda _path: registered,
+    )
+    monkeypatch.setattr(
+        "pcd_cli.integrations.shells.cmd_autorun.remove",
+        remove_from_autorun,
+    )
+
+    result = runner.invoke(cli, ["shell", "install", "cmd"])
+    integration = ShellIntegration.for_shell(Shell.CMD)
+
+    assert result.exit_code == 0
+    assert integration.state() is ShellIntegrationState.MANAGED
+    wrapper = integration.config_path.read_text(encoding="utf-8")
+    assert wrapper.startswith("@echo off")
+    assert added == [integration.config_path]
+
+    assert integration.install() is False
+
+    uninstalled = runner.invoke(cli, ["shell", "uninstall", "cmd"])
+
+    assert uninstalled.exit_code == 0
+    assert integration.state() is ShellIntegrationState.ABSENT
+    assert removed == [integration.config_path]
+
+
+def test_cmd_autorun_preserves_existing_commands(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wrapper = tmp_path / "pcd.cmd"
+    current = 'call "existing.cmd"'
+    written: list[str] = []
+    monkeypatch.setattr(cmd_autorun, "_read", lambda: (current, 1))
+    monkeypatch.setattr(
+        cmd_autorun,
+        "_write",
+        lambda value, _value_type: written.append(value),
+    )
+
+    assert cmd_autorun.add(wrapper) is True
+    expected = f"{current} & {cmd_autorun.doskey_command(wrapper)}"
+    assert written == [expected]
+
+    written.clear()
+    with_trailing_command = f'{expected} & call "later.cmd"'
+    monkeypatch.setattr(
+        cmd_autorun,
+        "_read",
+        lambda: (with_trailing_command, 1),
+    )
+    cmd_autorun.remove(wrapper)
+    assert written == [f'{current} & call "later.cmd"']
+
+
+def test_cmd_update_restores_wrapper_when_autorun_update_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wrapper = tmp_path / "pcd.cmd"
+    previous_content = cmd_backend.render(Shell.CMD).replace(
+        "setlocal\n",
+        "rem Previous generated version\nsetlocal\n",
+    )
+    wrapper.write_text(previous_content, encoding="utf-8")
+    monkeypatch.setattr(cmd_backend, "_require_windows", lambda _action: None)
+    monkeypatch.setattr(cmd_autorun, "configured", lambda _wrapper: False)
+
+    def fail_to_add(_wrapper: Path) -> bool:
+        raise OSError("registry unavailable")
+
+    monkeypatch.setattr(cmd_autorun, "add", fail_to_add)
+
+    with pytest.raises(OSError, match="registry unavailable"):
+        cmd_backend.install(Shell.CMD, wrapper)
+
+    assert wrapper.read_text(encoding="utf-8") == previous_content
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows CMD registration test")
+def test_cmd_state_rejects_missing_managed_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wrapper = tmp_path / "pcd.cmd"
+    monkeypatch.setattr(cmd_autorun, "configured", lambda _wrapper: True)
+    integration = ShellIntegration(Shell.CMD, wrapper)
+
+    with pytest.raises(ShellIntegrationError, match="registered wrapper is missing"):
+        integration.state()
+
+
+def test_cmd_uninstall_removes_stale_autorun_registration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    wrapper = tmp_path / "pcd.cmd"
+    removed: list[Path] = []
+    monkeypatch.setattr(cmd_backend, "_require_windows", lambda _action: None)
+    monkeypatch.setattr(cmd_autorun, "configured", lambda _wrapper: True)
+    monkeypatch.setattr(cmd_autorun, "remove", removed.append)
+
+    assert cmd_backend.uninstall(Shell.CMD, wrapper) is True
+    assert removed == [wrapper]
 
 
 def test_shell_install_detects_zsh_and_is_idempotent(
@@ -107,7 +271,7 @@ def test_shell_install_detects_zsh_and_is_idempotent(
 
     assert installed.exit_code == 0
     assert "Installed zsh integration" in installed.output
-    assert f"source {config}" in installed.output
+    assert ShellIntegration.for_shell(Shell.ZSH).reload_command() in installed.output
     assert repeated.exit_code == 0
     assert "already installed" in repeated.output
     assert content.startswith("export EDITOR=vim\n")
@@ -171,7 +335,10 @@ def test_shell_uninstall_reports_absent_integration(runner: CliRunner) -> None:
     assert "not installed" in result.output
 
 
-@pytest.mark.parametrize("wrapper", [None, "bash", "zsh", "fish", "unknown"])
+@pytest.mark.parametrize(
+    "wrapper",
+    [None, "bash", "zsh", "fish", "powershell", "pwsh", "cmd", "unknown"],
+)
 @pytest.mark.parametrize("navigation", ["0", "1"])
 def test_shell_status_reports_configuration_and_wrapper(
     runner: CliRunner,
@@ -185,14 +352,14 @@ def test_shell_status_reports_configuration_and_wrapper(
         monkeypatch.delenv("PCD_WRAPPER", raising=False)
     else:
         monkeypatch.setenv("PCD_WRAPPER", wrapper)
-    assert runner.invoke(cli, ["shell", "install"]).exit_code == 0
+    assert runner.invoke(cli, ["shell", "install", "fish"]).exit_code == 0
 
-    result = runner.invoke(cli, ["shell", "status"])
+    result = runner.invoke(cli, ["shell", "status", "fish"])
 
     assert result.exit_code == 0
     assert "Shell: fish" in result.output
     assert "Configured: installed by pcd" in result.output
-    expected = f"yes ({wrapper})" if wrapper in ("bash", "zsh", "fish") else "no"
+    expected = f"yes ({wrapper})" if wrapper in {shell.value for shell in Shell} else "no"
     assert f"Invoked through wrapper: {expected}" in result.output.splitlines()
 
 
@@ -200,7 +367,7 @@ def test_shell_install_can_be_explicit_when_shell_is_unknown(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.setenv("SHELL", "/bin/unsupported")
 
     automatic = runner.invoke(cli, ["shell", "install"])
     explicit = runner.invoke(cli, ["shell", "install", "zsh"])
@@ -210,11 +377,245 @@ def test_shell_install_can_be_explicit_when_shell_is_unknown(
     assert explicit.exit_code == 0
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell behavior test")
+@pytest.mark.parametrize(
+    ("shell", "executable_name"),
+    [(Shell.POWERSHELL, "powershell.exe"), (Shell.PWSH, "pwsh.exe")],
+)
+def test_powershell_wrapper_changes_directory(
+    tmp_path: Path,
+    shell: Shell,
+    executable_name: str,
+) -> None:
+    if shutil.which(executable_name) is None:
+        pytest.skip(f"{executable_name} is not installed")
+
+    binary_dir = tmp_path / "bin"
+    target = tmp_path / "target"
+    binary_dir.mkdir()
+    target.mkdir()
+
+    executable = binary_dir / "pcd.cmd"
+    executable.write_text(
+        """@echo off
+if defined _PCD_COMPLETE echo # completion
+if defined _PCD_COMPLETE exit /b 0
+if "%~1"=="jump" goto jump
+if "%~1"=="--project" if "%~2"=="jump" goto jump
+if "%~1"=="config" goto config
+echo __PCD_CD__:ordinary-output
+exit /b 0
+
+:jump
+echo %PCD_TEST_TARGET%
+exit /b 10
+
+:config
+echo config-output
+exit /b 0
+""",
+        encoding="utf-8",
+    )
+
+    integration = tmp_path / "pcd.ps1"
+    integration.write_text(
+        render_shell_integration(shell),
+        encoding="utf-8",
+    )
+    script = tmp_path / "test.ps1"
+    quoted_integration = str(integration).replace("'", "''")
+    script.write_text(
+        f""". '{quoted_integration}'
+pcd jump
+Write-Output "cwd=$((Get-Location).Path)"
+pcd config edit
+pcd marker
+pcd --project jump
+Write-Output "cwd-option=$((Get-Location).Path)"
+Write-Output "exit=$global:LASTEXITCODE"
+Write-Output "wrapper=$env:PCD_WRAPPER"
+""",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    path_key = next(key for key in environment if key.casefold() == "path")
+    environment[path_key] = f"{binary_dir}{os.pathsep}{environment[path_key]}"
+    environment["PCD_TEST_TARGET"] = str(target)
+    environment.pop("PCD_SHELL", None)
+    environment.pop("PCD_WRAPPER", None)
+    environment.pop("_PCD_COMPLETE", None)
+
+    result = subprocess.run(
+        [
+            executable_name,
+            "-NoLogo",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == [
+        f"cwd={target}",
+        "config-output",
+        "__PCD_CD__:ordinary-output",
+        f"cwd-option={target}",
+        "exit=0",
+        "wrapper=",
+    ]
+    assert result.stderr == ""
+
+
 def test_reload_command_quotes_config_path(tmp_path: Path) -> None:
     config = tmp_path / "shell config"
     integration = ShellIntegration(Shell.BASH, config)
 
     assert integration.reload_command() == f"source '{config}'"
+
+
+def test_powershell_profile_and_reload_command() -> None:
+    home = Path.home()
+    integration = ShellIntegration.for_shell(Shell.POWERSHELL)
+
+    assert integration.config_path == (
+        home / "Documents" / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1"
+    )
+    assert integration.reload_command() == f". '{integration.config_path}'"
+
+
+def test_pwsh_profile_and_reload_command() -> None:
+    home = Path.home()
+    integration = ShellIntegration.for_shell(Shell.PWSH)
+
+    assert integration.config_path == (
+        home / "Documents" / "PowerShell" / "Microsoft.PowerShell_profile.ps1"
+    )
+    assert integration.reload_command() == f". '{integration.config_path}'"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows CMD behavior test")
+def test_cmd_wrapper_changes_directory(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    executable = tmp_path / "pcd-stub.cmd"
+    executable.write_text(
+        """@echo off
+if "%~1"=="jump" goto jump
+if "%~1"=="config" goto config
+echo ordinary-output
+exit /b 0
+
+:jump
+echo %PCD_TEST_TARGET%
+exit /b 10
+
+:config
+echo config-output
+exit /b 0
+""",
+        encoding="utf-8",
+    )
+    wrapper = tmp_path / "pcd.cmd"
+    wrapper.write_text(render_shell_integration(Shell.CMD), encoding="utf-8")
+    script = tmp_path / "test.cmd"
+    script.write_text(
+        f"""@echo off
+call "{wrapper}" jump
+echo cwd=%CD%
+call "{wrapper}" config edit
+call "{wrapper}" marker
+echo wrapper=%PCD_WRAPPER%
+""",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["_PCD_EXECUTABLE"] = str(executable)
+    environment["PCD_TEST_TARGET"] = str(target)
+    environment.pop("PCD_SHELL", None)
+    environment.pop("PCD_WRAPPER", None)
+
+    result = subprocess.run(
+        ["cmd.exe", "/d", "/c", str(script)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == [
+        f"cwd={target}",
+        "config-output",
+        "ordinary-output",
+        "wrapper=",
+    ]
+    assert result.stderr == ""
+
+
+def test_powershell_reload_command_escapes_single_quotes(tmp_path: Path) -> None:
+    config = tmp_path / "user's profile.ps1"
+    integration = ShellIntegration(Shell.POWERSHELL, config)
+    escaped = str(config).replace("'", "''")
+
+    assert integration.reload_command() == f". '{escaped}'"
+
+
+def test_detects_powershell_executable(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SHELL", "powershell.exe")
+
+    result = runner.invoke(cli, ["shell", "status"])
+
+    assert result.exit_code == 0
+    assert "Shell: powershell" in result.output
+
+
+def test_detects_pwsh_executable(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SHELL", "pwsh.exe")
+
+    result = runner.invoke(cli, ["shell", "status"])
+
+    assert result.exit_code == 0
+    assert "Shell: pwsh" in result.output
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Git Bash detection test")
+def test_detects_git_bash_executable(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SHELL", r"C:\Program Files\Git\bin\bash.exe")
+
+    result = runner.invoke(cli, ["shell", "status"])
+
+    assert result.exit_code == 0
+    assert "Shell: bash" in result.output
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows shell detection test")
+def test_windows_requires_explicit_shell_before_installation(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.delenv("PCD_WRAPPER", raising=False)
+
+    result = runner.invoke(cli, ["shell", "status"])
+
+    assert result.exit_code == 2
+    assert "Cannot detect a supported shell" in result.output
 
 
 def test_fish_config_uses_xdg_config_home(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -309,6 +710,7 @@ def test_shell_integration_state_detects_manual_and_absent() -> None:
     assert integration.state() is ShellIntegrationState.MANUAL
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shell behavior test")
 def test_bash_wrapper_changes_directory_without_magic_stdout_protocol(tmp_path: Path) -> None:
     binary_dir = tmp_path / "bin"
     target = tmp_path / "target"
@@ -330,9 +732,6 @@ if [ \"${1:-}\" = --project=jump ]; then
     exit 10
 fi
 if [ \"${1:-}\" = config ]; then
-    if [ \"${PCD_SHELL:-}\" = 1 ]; then
-        exit 99
-    fi
     printf '%s\\n' 'config-output'
     exit 0
 fi
@@ -344,7 +743,7 @@ printf '%s\\n' '__PCD_CD__:ordinary-output'
 
     integration = tmp_path / "pcd.bash"
     integration.write_text(
-        render_shell_integration(Shell.BASH, ("config",)),
+        render_shell_integration(Shell.BASH),
         encoding="utf-8",
     )
     environment = os.environ.copy()

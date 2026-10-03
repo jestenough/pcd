@@ -1,38 +1,20 @@
 """Generate, install, and inspect shell integration for pcd."""
 
 import os
-import shlex
-import stat
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
-from textwrap import dedent
-from typing import Literal, Self
+from typing import Self
 
-from pcd_cli.filesystem import atomic_write, file_lock
-
-SHELL_MODE_ENV = "PCD_SHELL"
-SHELL_WRAPPER_ENV = "PCD_WRAPPER"
-# Internal success status: stdout contains the destination path when this is returned.
-SHELL_CD_EXIT_CODE = 10
-_MANAGED_BLOCK_START = "# >>> pcd shell integration >>>"
-_MANAGED_BLOCK_END = "# <<< pcd shell integration <<<"
-
-
-class ShellIntegrationError(Exception):
-    """Persistent shell integration cannot be inspected or managed safely."""
-
-
-class Shell(StrEnum):
-    BASH = "bash"
-    ZSH = "zsh"
-    FISH = "fish"
-
-
-class ShellIntegrationState(StrEnum):
-    ABSENT = "not installed"
-    MANUAL = "configured manually"
-    MANAGED = "installed by pcd"
+from pcd_cli.integrations.shells import startup_file
+from pcd_cli.integrations.shells.common import (
+    Shell as Shell,
+    SHELL_CD_EXIT_CODE as SHELL_CD_EXIT_CODE,
+    SHELL_MODE_ENV,
+    SHELL_WRAPPER_ENV,
+    ShellIntegrationError as ShellIntegrationError,
+    ShellIntegrationState as ShellIntegrationState,
+)
+from pcd_cli.integrations.shells.registry import backend_for
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,63 +31,29 @@ class ShellIntegration:
         return cls(shell=shell, config_path=shell_config_path(shell))
 
     def state(self) -> ShellIntegrationState:
-        return _integration_state(self._read(), self.shell)
+        return backend_for(self.shell).state(self.shell, self.config_path)
 
     def reload_command(self) -> str:
-        return f"source {shlex.quote(str(self.config_path))}"
+        return backend_for(self.shell).reload_command(self.shell, self.config_path)
 
     def install(self) -> bool:
-        """Install the managed block. Return whether the config changed."""
-        with file_lock(self.config_path):
-            content = self._read()
-            if _integration_state(content, self.shell) is not ShellIntegrationState.ABSENT:
-                return False
-
-            separator = "" if not content or content.endswith("\n") else "\n"
-            self._write(f"{content}{separator}{render_managed_block(self.shell)}")
-            return True
+        """Install managed integration. Return whether persistent state changed."""
+        return backend_for(self.shell).install(self.shell, self.config_path)
 
     def uninstall(self) -> bool:
-        """Remove only a pcd-managed block, leaving manual setup untouched."""
-        with file_lock(self.config_path):
-            content = self._read()
-            bounds = _managed_block_bounds(content)
-            if bounds is None:
-                return False
-
-            start, end = bounds
-            self._write(f"{content[:start]}{content[end:]}")
-            return True
-
-    def _read(self) -> str:
-        try:
-            return self.config_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return ""
-        except UnicodeError as exc:
-            raise ShellIntegrationError(
-                f"Shell config is not valid UTF-8: {self.config_path}"
-            ) from exc
-
-    def _write(self, content: str) -> None:
-        target = (
-            self.config_path.resolve(strict=False)
-            if self.config_path.is_symlink()
-            else self.config_path
-        )
-        mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else None
-
-        with atomic_write(target) as stream:
-            stream.write(content)
-
-        if mode is not None:
-            target.chmod(mode)
+        """Remove only integration installed by pcd, leaving manual setup untouched."""
+        return backend_for(self.shell).uninstall(self.shell, self.config_path)
 
 
 def detect_shell() -> Shell:
-    """Detect the user's login shell from the standard SHELL environment variable."""
+    """Detect the active wrapper or the login shell named by SHELL."""
+    wrapper = invoking_shell()
+    if wrapper is not None:
+        return wrapper
+
     executable = os.environ.get("SHELL", "")
-    name = Path(executable).name.casefold()
+    name = Path(executable).name.casefold().removesuffix(".exe")
+
     try:
         return Shell(name)
     except ValueError as exc:
@@ -116,17 +64,8 @@ def detect_shell() -> Shell:
 
 
 def shell_config_path(shell: Shell) -> Path:
-    """Return the startup file where persistent integration should be installed."""
-    home = Path.home()
-    if shell is Shell.BASH:
-        return home / ".bashrc"
-    if shell is Shell.ZSH:
-        zdotdir = os.environ.get("ZDOTDIR")
-        return (Path(zdotdir).expanduser() if zdotdir else home) / ".zshrc"
-
-    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-    config_home = Path(xdg_config_home).expanduser() if xdg_config_home else home / ".config"
-    return config_home / "fish" / "config.fish"
+    """Return the persistent integration file for a shell."""
+    return backend_for(shell).config_path(shell, Path.home())
 
 
 def shell_integration_active() -> bool:
@@ -143,20 +82,22 @@ def invoking_shell() -> Shell | None:
 
 def inactive_shell_message() -> str:
     """Explain how to activate directory changes when the wrapper is not running."""
+    install_command = "pcd shell install <shell>" if os.name == "nt" else "pcd shell install"
     try:
         integration = ShellIntegration.detect()
         state = integration.state()
     except (OSError, ShellIntegrationError):
         return (
             "Shell integration is not active, so pcd cannot change this shell's directory. "
-            "If you have not configured it manually, run: pcd shell install"
+            f"If you have not configured it manually, run: {install_command}"
         )
 
     if state is ShellIntegrationState.ABSENT:
         return (
             "Shell integration is not installed, so pcd cannot change this shell's directory. "
-            "Install it with: pcd shell install"
+            f"Install it with: {install_command}"
         )
+
     return (
         f"Shell integration is configured in {integration.config_path} but is not active in "
         f"this shell. Reload it with: {integration.reload_command()}"
@@ -164,152 +105,13 @@ def inactive_shell_message() -> str:
 
 
 def render_managed_block(shell: Shell) -> str:
-    """Render the small persistent block written into the shell startup file."""
-    command = (
-        f'eval "$(command pcd shell init {shell.value})"'
-        if shell is not Shell.FISH
-        else f"command pcd shell init {shell.value} | source"
-    )
-    return f"{_MANAGED_BLOCK_START}\n{command}\n{_MANAGED_BLOCK_END}\n"
+    """Render the small persistent block written into a shell startup file."""
+    command = backend_for(shell).startup_command(shell)
+    if command is None:
+        raise ValueError(f"Shell does not use a startup file: {shell}")
+    return startup_file.managed_block(command)
 
 
-def render_shell_integration(shell: Shell, direct_commands: tuple[str, ...] = ()) -> str:
-    """Generate shell integration for directory changes and Click completion."""
-    commands = tuple(sorted(set(direct_commands)))
-    match shell:
-        case Shell.FISH:
-            return _fish(commands)
-        case Shell.BASH:
-            return _posix("bash_source", commands)
-        case Shell.ZSH:
-            return _posix("zsh_source", commands)
-        case _:
-            raise ValueError(f"Unsupported shell: {shell}")
-
-
-def _integration_state(content: str, shell: Shell) -> ShellIntegrationState:
-    bounds = _managed_block_bounds(content)
-    if bounds is not None:
-        return ShellIntegrationState.MANAGED
-
-    current = f"pcd shell init {shell.value}"
-    if current in content:
-        return ShellIntegrationState.MANUAL
-    return ShellIntegrationState.ABSENT
-
-
-def _managed_block_bounds(content: str) -> tuple[int, int] | None:
-    starts = content.count(_MANAGED_BLOCK_START)
-    ends = content.count(_MANAGED_BLOCK_END)
-    if starts == 0 and ends == 0:
-        return None
-    if starts != 1 or ends != 1:
-        raise ShellIntegrationError(
-            "Shell config contains an invalid pcd-managed integration block"
-        )
-
-    start = content.index(_MANAGED_BLOCK_START)
-    end_marker = content.index(_MANAGED_BLOCK_END)
-    if end_marker < start:
-        raise ShellIntegrationError(
-            "Shell config contains an invalid pcd-managed integration block"
-        )
-
-    end = end_marker + len(_MANAGED_BLOCK_END)
-    if end < len(content) and content[end] == "\n":
-        end += 1
-    return start, end
-
-
-def _posix(completion: Literal["bash_source", "zsh_source"], commands: tuple[str, ...]) -> str:
-    direct_patterns = "|".join(("-*", *commands))
-    return dedent(
-        f"""\
-        pcd() {{
-            local -x {SHELL_WRAPPER_ENV}={completion.removesuffix("_source")}
-            if [ -n "${{_PCD_COMPLETE:-}}" ]; then
-                command pcd "$@"
-                return $?
-            fi
-
-            if [ "$#" -eq 0 ]; then
-                command pcd
-                return $?
-            fi
-            case "$1" in
-                --project|--project=*) : ;;
-                {direct_patterns})
-                    command pcd "$@"
-                    return $?
-                    ;;
-            esac
-
-            local output code
-            if output="$({SHELL_MODE_ENV}=1 command pcd "$@")"; then
-                code=0
-            else
-                code=$?
-            fi
-
-            if [ "$code" -eq {SHELL_CD_EXIT_CODE} ]; then
-                builtin cd -- "$output"
-                return $?
-            fi
-            if [ "$code" -ne 0 ]; then
-                return "$code"
-            fi
-            if [ -n "$output" ]; then
-                printf '%s\n' "$output"
-            fi
-        }}
-
-        eval "$(_PCD_COMPLETE={completion} command pcd)"
-        """
-    )
-
-
-def _fish(commands: tuple[str, ...]) -> str:
-    direct_patterns = " ".join(("'-*'", *commands))
-    return dedent(
-        f"""\
-        function pcd
-            set -lx {SHELL_WRAPPER_ENV} fish
-            if set -q _PCD_COMPLETE
-                command pcd $argv
-                return $status
-            end
-
-            if test (count $argv) -eq 0
-                command pcd
-                return $status
-            end
-            switch $argv[1]
-                case '--project' '--project=*'
-                    true
-                case {direct_patterns}
-                    command pcd $argv
-                    return $status
-            end
-
-            set -l output (begin
-                set -lx {SHELL_MODE_ENV} 1
-                command pcd $argv
-            end)
-            set -l code $status
-            if test $code -eq {SHELL_CD_EXIT_CODE}
-                cd -- "$output"
-                return $status
-            end
-            if test $code -ne 0
-                return $code
-            end
-            if test -n "$output"
-                printf '%s\n' "$output"
-            end
-        end
-
-        set -lx _PCD_COMPLETE fish_source
-        command pcd | source
-        set -e _PCD_COMPLETE
-        """
-    )
+def render_shell_integration(shell: Shell) -> str:
+    """Generate shell integration for directory changes and completion."""
+    return backend_for(shell).render(shell)
