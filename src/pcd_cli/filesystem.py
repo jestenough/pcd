@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import os
 import tempfile
 from contextlib import contextmanager
@@ -9,6 +8,8 @@ from pathlib import Path
 from typing import Self, TextIO, TYPE_CHECKING
 
 from platformdirs import PlatformDirs
+
+from pcd_cli.locking import file_lock as file_lock
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -46,20 +47,6 @@ def format_path(path: Path) -> str:
 
     relative = path.relative_to(home)
     return "~" if not relative.parts else f"~/{relative}"
-
-
-@contextmanager
-def file_lock(path: Path) -> Generator[None]:
-    """Prevent concurrent writers from overwriting each other's changes."""
-    lock_path = path.with_name(f".{path.name}.lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with lock_path.open("a+", encoding="utf-8") as stream:
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 @contextmanager
