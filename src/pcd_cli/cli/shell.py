@@ -1,3 +1,5 @@
+import sys
+
 import click
 
 from pcd_cli.integrations.shell import (
@@ -24,7 +26,8 @@ def shell_commands() -> None:
 )
 def install_shell(shell: str | None) -> None:
     """Install persistent shell integration into the shell startup file."""
-    integration = _shell_integration(shell)
+    selected = _select_install_shell(shell)
+    integration = ShellIntegration.for_shell(selected)
     if integration.install():
         click.echo(f"Installed {integration.shell.value} integration in {integration.config_path}")
         click.echo(f"Reload the current shell with: {integration.reload_command()}")
@@ -93,6 +96,36 @@ def init_shell(shell: str | None) -> None:
 
 def _shell_integration(shell: str | None) -> ShellIntegration:
     return ShellIntegration.for_shell(_selected_shell(shell))
+
+
+def _select_install_shell(shell: str | None) -> Shell:
+    if shell is not None:
+        return _selected_shell(shell)
+
+    try:
+        return detect_shell()
+    except ShellIntegrationError as exc:
+        if sys.platform != "win32":
+            raise click.UsageError(str(exc)) from exc
+
+    choices = (
+        ("PowerShell 7+", Shell.PWSH),
+        ("Windows PowerShell 5.1", Shell.POWERSHELL),
+        ("Command Prompt (cmd)", Shell.CMD),
+        ("Git Bash", Shell.BASH),
+    )
+
+    click.echo("Select shell:")
+    for index, (label, _shell) in enumerate(choices, start=1):
+        click.echo(f"  {index}. {label}")
+
+    selected = click.prompt(
+        "Enter number",
+        type=click.IntRange(1, len(choices)),
+        show_choices=False,
+    )
+
+    return choices[selected - 1][1]
 
 
 def _selected_shell(shell: str | None) -> Shell:

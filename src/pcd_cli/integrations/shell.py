@@ -1,6 +1,7 @@
 """Generate, install, and inspect shell integration for pcd."""
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
@@ -46,21 +47,42 @@ class ShellIntegration:
 
 
 def detect_shell() -> Shell:
-    """Detect the active wrapper or the login shell named by SHELL."""
+    """Detect the active wrapper or surrounding shell."""
     wrapper = invoking_shell()
     if wrapper is not None:
         return wrapper
 
-    executable = os.environ.get("SHELL", "")
-    name = Path(executable).name.casefold().removesuffix(".exe")
+    if sys.platform == "win32":
+        name = _detect_windows_shell()
+        source = "the parent process"
+    else:
+        executable = os.environ.get("SHELL", "")
+        name = Path(executable).name.casefold().removesuffix(".exe")
+        source = f"SHELL={executable!r}"
 
     try:
         return Shell(name)
     except ValueError as exc:
         supported = ", ".join(shell.value for shell in Shell)
         raise ShellIntegrationError(
-            f"Cannot detect a supported shell from SHELL={executable!r}; choose one of: {supported}"
+            f"Cannot detect a supported shell from {source}; choose one of: {supported}"
         ) from exc
+
+
+def _detect_windows_shell() -> str:
+    """Load Shellingham only when native Windows detection is required."""
+    try:
+        import shellingham  # type: ignore[import-not-found]
+    except ModuleNotFoundError as exc:
+        raise ShellIntegrationError("Windows shell detection is unavailable") from exc
+
+    try:
+        detected: tuple[str, str] = shellingham.detect_shell()
+    except OSError as exc:
+        raise ShellIntegrationError("Cannot detect the surrounding Windows shell") from exc
+    
+    name, _executable = detected
+    return name.casefold().removesuffix(".exe")
 
 
 def shell_config_path(shell: Shell) -> Path:
@@ -82,7 +104,13 @@ def invoking_shell() -> Shell | None:
 
 def inactive_shell_message() -> str:
     """Explain how to activate directory changes when the wrapper is not running."""
-    install_command = "pcd shell install <shell>" if os.name == "nt" else "pcd shell install"
+    install_command = "pcd shell install"
+    if sys.platform == "win32" and invoking_shell() is None:
+        return (
+            "Shell integration is not active, so pcd cannot change this shell's directory. "
+            f"If you have not configured it manually, run: {install_command}"
+        )
+
     try:
         integration = ShellIntegration.detect()
         state = integration.state()

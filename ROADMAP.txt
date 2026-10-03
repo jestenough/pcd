@@ -10,7 +10,7 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
 0.2.4 - WINDOWS SHELL SUPPORT
 -----------------------------
 
-    1. Support Windows PowerShell 5.1 and PowerShell 7 with native wrappers.
+    1. Support Windows PowerShell 5.1 and PowerShell 7+ with native wrappers.
     2. Support Command Prompt through a managed wrapper and a user-level DOSKEY AutoRun entry.
        Preserve unrelated AutoRun commands and never modify the shared PATH.
     3. Support Git Bash through the Bash backend and keep WSL on the Linux integration path.
@@ -20,7 +20,7 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
 
 RELEASE ACCEPTANCE
     Existing Linux and macOS checks remain green.
-    The dedicated Windows job passes on windows-latest with PowerShell 5.1, PowerShell 7,
+    The dedicated Windows job passes on windows-latest with Windows PowerShell 5.1, PowerShell 7+,
     CMD, Git Bash, package installation, type checking, and cleanup.
     The wheel includes every shell and locking backend.
 

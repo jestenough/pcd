@@ -4,10 +4,11 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Never, TYPE_CHECKING
 
 import pytest
 
+import pcd_cli.integrations.shell as shell_integration
 import pcd_cli.integrations.shells.cmd as cmd_backend
 import pcd_cli.integrations.shells.cmd_autorun as cmd_autorun
 from pcd_cli.cli import cli
@@ -261,6 +262,7 @@ def test_shell_install_detects_zsh_and_is_idempotent(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/usr/bin/zsh")
     config = Path.home() / ".zshrc"
     config.write_text("export EDITOR=vim\n", encoding="utf-8")
@@ -279,10 +281,65 @@ def test_shell_install_detects_zsh_and_is_idempotent(
     assert 'eval "$(command pcd shell init zsh)"' in content
 
 
+def test_shell_install_prompts_for_shell_on_windows(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pcd_cli.cli.shell.sys.platform", "win32")
+    monkeypatch.setattr(
+        shell_integration,
+        "_detect_windows_shell",
+        lambda: _raise_shell_detection_error(),
+    )
+
+    result = runner.invoke(cli, ["shell", "install"], input="4\n")
+
+    assert result.exit_code == 0
+    assert "Select shell:" in result.output
+    assert "1. PowerShell 7+" in result.output
+    assert "2. Windows PowerShell 5.1" in result.output
+    assert "3. Command Prompt (cmd)" in result.output
+    assert "4. Git Bash" in result.output
+    assert "Installed bash integration" in result.output
+
+
+def test_shell_install_detects_windows_shell_without_prompt(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pcd_cli.cli.shell.sys.platform", "win32")
+    monkeypatch.setattr(shell_integration, "_detect_windows_shell", lambda: "pwsh")
+
+    result = runner.invoke(cli, ["shell", "install"])
+
+    assert result.exit_code == 0
+    assert "Select shell:" not in result.output
+    assert "Installed pwsh integration" in result.output
+
+
+def test_shell_detection_does_not_use_windows_detector_on_linux(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
+    monkeypatch.setenv("SHELL", "/bin/bash")
+
+    def unexpected_windows_detection() -> str:
+        pytest.fail("Windows shell detection was loaded on Linux")
+
+    monkeypatch.setattr(shell_integration, "_detect_windows_shell", unexpected_windows_detection)
+
+    assert shell_integration.detect_shell() is Shell.BASH
+
+
+def _raise_shell_detection_error() -> Never:
+    raise ShellIntegrationError("Cannot detect the surrounding Windows shell")
+
+
 def test_shell_install_leaves_manual_configuration_untouched(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/zsh")
     config = Path.home() / ".zshrc"
     manual = 'eval "$(pcd shell init zsh)"\n'
@@ -299,6 +356,7 @@ def test_shell_uninstall_removes_only_managed_integration(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/bash")
     config = Path.home() / ".bashrc"
     original = "export EDITOR=nvim\n"
@@ -316,6 +374,7 @@ def test_shell_uninstall_does_not_remove_manual_configuration(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/bash")
     config = Path.home() / ".bashrc"
     manual = 'eval "$(pcd shell init bash)"\n'
@@ -367,6 +426,7 @@ def test_shell_install_can_be_explicit_when_shell_is_unknown(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.cli.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/unsupported")
 
     automatic = runner.invoke(cli, ["shell", "install"])
@@ -571,6 +631,7 @@ def test_detects_powershell_executable(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "powershell.exe")
 
     result = runner.invoke(cli, ["shell", "status"])
@@ -583,6 +644,7 @@ def test_detects_pwsh_executable(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "pwsh.exe")
 
     result = runner.invoke(cli, ["shell", "status"])
@@ -596,7 +658,7 @@ def test_detects_git_bash_executable(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SHELL", r"C:\Program Files\Git\bin\bash.exe")
+    monkeypatch.setattr(shell_integration, "_detect_windows_shell", lambda: "bash")
 
     result = runner.invoke(cli, ["shell", "status"])
 
@@ -605,17 +667,21 @@ def test_detects_git_bash_executable(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows shell detection test")
-def test_windows_requires_explicit_shell_before_installation(
+def test_windows_status_reports_detection_failure(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("SHELL", raising=False)
     monkeypatch.delenv("PCD_WRAPPER", raising=False)
+    monkeypatch.setattr(
+        shell_integration,
+        "_detect_windows_shell",
+        lambda: _raise_shell_detection_error(),
+    )
 
     result = runner.invoke(cli, ["shell", "status"])
 
     assert result.exit_code == 2
-    assert "Cannot detect a supported shell" in result.output
+    assert "Cannot detect the surrounding Windows shell" in result.output
 
 
 def test_fish_config_uses_xdg_config_home(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -639,6 +705,7 @@ def test_install_preserves_symlinked_shell_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/zsh")
     dotfiles = tmp_path / "dotfiles"
     dotfiles.mkdir()
@@ -655,6 +722,7 @@ def test_install_preserves_symlinked_shell_config(
 
 
 def test_invalid_managed_block_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/zsh")
     config = Path.home() / ".zshrc"
     config.write_text("# >>> pcd shell integration >>>\n", encoding="utf-8")
@@ -694,7 +762,12 @@ def test_uninstall_handles_managed_block_at_end_of_file() -> None:
 
 
 def test_inactive_shell_message_handles_detection_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SHELL", "/bin/unsupported")
+    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "win32")
+
+    def unexpected_windows_detection() -> str:
+        pytest.fail("Windows shell detection was loaded during regular navigation")
+
+    monkeypatch.setattr(shell_integration, "_detect_windows_shell", unexpected_windows_detection)
 
     message = inactive_shell_message()
 

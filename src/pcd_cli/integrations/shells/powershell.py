@@ -1,4 +1,4 @@
-"""Windows PowerShell and PowerShell 7 integration backend."""
+"""Windows PowerShell 5.1 and PowerShell 7+ integration backend."""
 
 import os
 import sys
