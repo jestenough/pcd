@@ -1,9 +1,9 @@
 PCD ROADMAP
 ===========
 
-Current release: 0.2.4. Next release: 0.2.5.
+Current release: 0.2.5. Next release: 0.2.6.
 Work through releases in the order below. Within each release, follow the listed order.
-Versions after 0.2.5 are planning targets, not fixed delivery dates.
+Versions after 0.2.6 are planning targets, not fixed delivery dates.
 Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
 
 
@@ -25,7 +25,26 @@ RELEASE ACCEPTANCE
     The wheel includes every shell and locking backend.
 
 
-0.2.5 - PERFORMANCE
+0.2.5 - WINDOWS TERMINAL AND SHELL HARDENING
+--------------------------------------------
+
+    1. Keep stdout reserved for the shell navigation protocol while rendering the interactive
+       picker through the controlling terminal, including redirected PowerShell invocations.
+    2. Centralize supported platform and shell detection with explicit driver dispatch.
+       Keep platform-specific imports lazy and reject unsupported combinations before execution.
+    3. Share startup-file lifecycle behavior across shell drivers and return typed lifecycle
+       results without repeated configuration or registry reads.
+    4. Stream shell configuration inspection and preserve atomic updates and rollback behavior.
+    5. Cover Windows console handle restoration, platform boundaries, lazy imports, shell
+       lifecycle behavior, package contents, and platform-aware wheel smoke checks.
+
+RELEASE ACCEPTANCE
+    Linux, macOS, and Windows test and coverage jobs pass at the required threshold.
+    Format, lint, strict type checking, build, and wheel smoke checks pass.
+    PowerShell capture keeps the selected path on stdout without losing interactive picker output.
+
+
+0.2.6 - PERFORMANCE
 -------------------
 
     1. Establish benchmark baselines before changing algorithms.
@@ -36,7 +55,7 @@ RELEASE ACCEPTANCE
     2. Avoid repeated cache/history loads and repeated ranking within one CLI operation.
     3. Avoid scanning all roots twice during `pcd add`.
        Preserve conflict detection and config/cache correctness.
-    4. Expand shell E2E coverage beyond the behavior changed in 0.2.4.
+    4. Expand shell E2E coverage beyond the behavior changed in 0.2.4 and 0.2.5.
     5. Compare end-to-end latency and memory with the baseline.
        Retain optimizations only when they improve measured behavior without regressions.
 
@@ -45,7 +64,7 @@ CONSTRAINTS
     Do not introduce a new database or background service in this release.
 
 
-0.2.6 - DATA RELIABILITY
+0.2.7 - DATA RELIABILITY
 ------------------------
 
     1. Test concurrent configuration mutations and cache publication together.
@@ -132,6 +151,8 @@ REQUIREMENTS
     5. Review frecency ranking using the existing usage count and last-used timestamp.
        History collection and bounded retention already exist; do not reimplement them.
        Keep history lightweight and preserve deterministic unique exact-name resolution.
+    6. Make `pcd refresh` report how many new projects were found.
+       When an additional option is provided, also print the paths of the new projects.
 
 
 0.7.0 - ADDITIONAL SHELL SUPPORT
