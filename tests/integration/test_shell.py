@@ -156,6 +156,7 @@ def test_shell_install_supports_cmd(
     added: list[Path] = []
     removed: list[Path] = []
     registered = False
+    monkeypatch.setattr("pcd_cli.environment.sys.platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
 
     def add_to_autorun(path: Path) -> bool:
@@ -624,6 +625,7 @@ def test_shell_install_detects_windows_shell_without_prompt(
 ) -> None:
     monkeypatch.setattr("pcd_cli.environment.sys.platform", "win32")
     monkeypatch.setattr(windows_shell, "detect_shell", lambda: "pwsh")
+    monkeypatch.setattr(windows_registry, "read", lambda _key, _name: None)
 
     result = runner.invoke(cli, ["shell", "install"])
 
