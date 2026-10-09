@@ -41,7 +41,7 @@ def smoke_wheel(expected_version: str) -> None:
             PATH=f"{executable.parent}{os.pathsep}{environment.get('PATH', '')}",
         )
 
-        def run(*args: str, exit_code: int = 0) -> str:
+        def run(*args: str, exit_code: int = 0, stderr: str = "") -> str:
             result = subprocess.run(
                 [executable, *args],
                 cwd=root,
@@ -52,7 +52,7 @@ def smoke_wheel(expected_version: str) -> None:
                 timeout=10,
             )
             assert result.returncode == exit_code, result
-            assert result.stderr == "", result.stderr
+            assert result.stderr == stderr, result.stderr
             return result.stdout
 
         assert run("--version") == f"pcd, version {expected_version}\n"
@@ -63,8 +63,13 @@ def smoke_wheel(expected_version: str) -> None:
         assert json.loads(run("list", "--json")) == [
             {"name": "repo", "path": str(repo), "source": "discovered", "status": "available"}
         ]
-        for shell in ("bash", "zsh", "fish", "powershell", "pwsh", "cmd"):
+        for shell in ("bash", "zsh", "fish", "powershell", "pwsh"):
             assert "pcd" in run("shell", "init", shell)
+        if sys.platform == "win32":
+            assert "pcd" in run("shell", "init", "cmd")
+        else:
+            error = "Shell integration error: CMD integration is only available on Windows\n"
+            assert run("shell", "init", "cmd", exit_code=1, stderr=error) == ""
         environment["PCD_SHELL"] = "1"
         assert run("repo", exit_code=10) == f"{repo}\n"
     print(f"Wheel smoke passed for pcd-cli {expected_version}")

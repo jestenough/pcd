@@ -1,11 +1,11 @@
 """Windows PowerShell 5.1 and PowerShell 7+ integration backend."""
 
 import os
-import sys
 from pathlib import Path
 from textwrap import dedent
 
-from pcd_cli.integrations.shells import windows_registry
+from pcd_cli.environment import Platform
+from pcd_cli.integrations.shells.base import StartupDriver
 from pcd_cli.integrations.shells.common import (
     Shell,
     SHELL_CD_EXIT_CODE,
@@ -14,33 +14,52 @@ from pcd_cli.integrations.shells.common import (
 )
 
 
-def config_path(shell: Shell, home: Path) -> Path:
-    if sys.platform != "win32" and shell is Shell.PWSH:
-        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config").expanduser()
-        return config_home / "powershell" / "Microsoft.PowerShell_profile.ps1"
+class PowerShellDriver(StartupDriver):
+    def config_path(self, home: Path) -> Path:
+        match self.platform:
+            case Platform.LINUX | Platform.MACOS:
+                if self.shell is Shell.PWSH:
+                    config_home = Path(
+                        os.environ.get("XDG_CONFIG_HOME") or home / ".config"
+                    ).expanduser()
+                    return config_home / "powershell" / "Microsoft.PowerShell_profile.ps1"
+                if self.shell is Shell.POWERSHELL:
+                    return (
+                        home
+                        / "Documents"
+                        / "WindowsPowerShell"
+                        / "Microsoft.PowerShell_profile.ps1"
+                    )
+                raise ValueError(f"Unsupported PowerShell on POSIX: {self.shell}")
+            case Platform.WINDOWS:
+                from pcd_cli.integrations.shells import windows_registry
 
-    documents = _windows_documents_path(home) if sys.platform == "win32" else home / "Documents"
-    if shell is Shell.POWERSHELL:
-        return documents / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1"
+                result = windows_registry.read(
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                    "Personal",
+                )
+                if result is None:
+                    documents = home / "Documents"
+                else:
+                    value, _value_type = result
+                    documents = Path(os.path.expandvars(str(value)))
 
-    if shell is Shell.PWSH:
-        return documents / "PowerShell" / "Microsoft.PowerShell_profile.ps1"
+                if self.shell is Shell.POWERSHELL:
+                    return documents / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1"
+                if self.shell is Shell.PWSH:
+                    return documents / "PowerShell" / "Microsoft.PowerShell_profile.ps1"
+                raise ValueError(f"Unsupported PowerShell: {self.shell}")
 
-    raise ValueError(f"Unsupported PowerShell: {shell}")
+    def reload_command(self, path: Path) -> str:
+        escaped = str(path).replace("'", "''")
+        return f". '{escaped}'"
 
+    def startup_command(self) -> str:
+        return f"pcd shell init {self.shell.value} | Out-String | Invoke-Expression"
 
-def reload_command(shell: Shell, path: Path) -> str:
-    escaped = str(path).replace("'", "''")
-    return f". '{escaped}'"
-
-
-def startup_command(shell: Shell) -> str:
-    return f"pcd shell init {shell.value} | Out-String | Invoke-Expression"
-
-
-def render(shell: Shell) -> str:
-    return dedent(
-        f"""\
+    def render(self) -> str:
+        return dedent(
+            f"""\
         function pcd {{
             [CmdletBinding()]
             param(
@@ -50,7 +69,7 @@ def render(shell: Shell) -> str:
 
             $hadPreviousWrapper = Test-Path Env:{SHELL_WRAPPER_ENV}
             $previousWrapper = $env:{SHELL_WRAPPER_ENV}
-            $env:{SHELL_WRAPPER_ENV} = '{shell.value}'
+            $env:{SHELL_WRAPPER_ENV} = '{self.shell.value}'
             try {{
                 $pcdExecutable = (
                     Get-Command pcd -CommandType Application -ErrorAction Stop |
@@ -111,15 +130,4 @@ def render(shell: Shell) -> str:
             }}
         }}
         """
-    )
-
-
-def _windows_documents_path(home: Path) -> Path:
-    result = windows_registry.read(
-        r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
-        "Personal",
-    )
-    if result is None:
-        return home / "Documents"
-    value, _value_type = result
-    return Path(os.path.expandvars(str(value)))
+        )

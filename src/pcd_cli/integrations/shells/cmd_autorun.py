@@ -36,11 +36,13 @@ def configured(wrapper: Path) -> bool:
     return _without_command(value, doskey_command(wrapper)) is not None
 
 
-def remove(wrapper: Path) -> None:
+def remove(wrapper: Path) -> bool:
     value, value_type = _read()
     updated = _without_command(value, doskey_command(wrapper))
-    if updated is not None:
-        _write(updated, value_type)
+    if updated is None:
+        return False
+    _write(updated, value_type)
+    return True
 
 
 def _without_command(value: str, managed_command: str) -> str | None:
