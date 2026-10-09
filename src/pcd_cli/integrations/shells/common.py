@@ -25,3 +25,9 @@ class ShellIntegrationState(StrEnum):
     ABSENT = "not installed"
     MANUAL = "configured manually"
     MANAGED = "installed by pcd"
+
+
+class ShellChange(StrEnum):
+    CHANGED = "changed"
+    UNCHANGED = "unchanged"
+    MANUAL = "manual"

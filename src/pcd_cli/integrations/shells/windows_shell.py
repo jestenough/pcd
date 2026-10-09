@@ -27,4 +27,4 @@ def detect_shell() -> str:
         name, _executable = detector.detect_shell()
     except OSError as exc:
         raise ShellIntegrationError("Cannot detect the surrounding Windows shell") from exc
-    return name.casefold().removesuffix(".exe")
+    return name

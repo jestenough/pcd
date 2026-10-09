@@ -11,7 +11,7 @@ from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.filesystem import ApplicationPaths, canonical_path
 from pcd_cli.history import UsageHistory
-from pcd_cli.integrations.shell import inactive_shell_message, Shell, ShellIntegration
+from pcd_cli.integrations.shell import ConfiguredShell, inactive_shell_message, Shell
 from pcd_cli.models import Project, ProjectSource
 from pcd_cli.navigation import select_project
 from pcd_cli.picker import ProjectPicker
@@ -247,7 +247,7 @@ def test_navigation_recommends_shell_install_when_integration_is_absent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
+    monkeypatch.setattr("pcd_cli.environment.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/zsh")
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -265,7 +265,7 @@ def test_navigation_recommends_reload_when_integration_is_configured(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
+    monkeypatch.setattr("pcd_cli.environment.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/zsh")
     (Path.home() / ".zshrc").write_text(
         'eval "$(pcd shell init zsh)"\n',
@@ -279,7 +279,7 @@ def test_navigation_recommends_reload_when_integration_is_configured(
 
     assert result.exit_code == 0
     assert "configured" in result.output
-    reload_command = ShellIntegration.for_shell(Shell.ZSH).reload_command()
+    reload_command = ConfiguredShell.for_shell(Shell.ZSH).reload_command()
     assert reload_command in result.output
     assert "pcd shell install" not in result.output
 
@@ -289,7 +289,7 @@ def test_navigation_recommends_reload_after_managed_install(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pcd_cli.integrations.shell.sys.platform", "linux")
+    monkeypatch.setattr("pcd_cli.environment.sys.platform", "linux")
     monkeypatch.setenv("SHELL", "/bin/zsh")
     assert runner.invoke(cli, ["shell", "install"]).exit_code == 0
     repo = tmp_path / "repo"
@@ -300,7 +300,7 @@ def test_navigation_recommends_reload_after_managed_install(
 
     assert result.exit_code == 0
     assert "configured" in result.output
-    reload_command = ShellIntegration.for_shell(Shell.ZSH).reload_command()
+    reload_command = ConfiguredShell.for_shell(Shell.ZSH).reload_command()
     assert reload_command in result.output
     assert "pcd shell install" not in result.output
 

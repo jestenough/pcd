@@ -6,6 +6,7 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Literal
 
+from pcd_cli.integrations.shells.base import StartupDriver
 from pcd_cli.integrations.shells.common import (
     Shell,
     SHELL_CD_EXIT_CODE,
@@ -14,47 +15,47 @@ from pcd_cli.integrations.shells.common import (
 )
 
 
-def config_path(shell: Shell, home: Path) -> Path:
-    if shell is Shell.BASH:
-        return home / ".bashrc"
+class UnixDriver(StartupDriver):
+    def config_path(self, home: Path) -> Path:
+        if self.shell is Shell.BASH:
+            return home / ".bashrc"
 
-    if shell is Shell.ZSH:
-        zdotdir = os.environ.get("ZDOTDIR")
-        return (Path(zdotdir).expanduser() if zdotdir else home) / ".zshrc"
+        if self.shell is Shell.ZSH:
+            zdotdir = os.environ.get("ZDOTDIR")
+            return (Path(zdotdir).expanduser() if zdotdir else home) / ".zshrc"
 
-    if shell is Shell.FISH:
-        xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-        config_home = Path(xdg_config_home).expanduser() if xdg_config_home else home / ".config"
-        return config_home / "fish" / "config.fish"
+        if self.shell is Shell.FISH:
+            xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+            config_home = (
+                Path(xdg_config_home).expanduser() if xdg_config_home else home / ".config"
+            )
+            return config_home / "fish" / "config.fish"
 
-    raise ValueError(f"Unsupported Unix shell: {shell}")
+        raise ValueError(f"Unsupported Unix shell: {self.shell}")
 
+    def reload_command(self, path: Path) -> str:
+        return f"source {shlex.quote(str(path))}"
 
-def reload_command(shell: Shell, path: Path) -> str:
-    return f"source {shlex.quote(str(path))}"
+    def startup_command(self) -> str:
+        if self.shell is Shell.FISH:
+            return f"command pcd shell init {self.shell.value} | source"
 
+        if self.shell in (Shell.BASH, Shell.ZSH):
+            return f'eval "$(command pcd shell init {self.shell.value})"'
 
-def startup_command(shell: Shell) -> str:
-    if shell is Shell.FISH:
-        return f"command pcd shell init {shell.value} | source"
+        raise ValueError(f"Unsupported Unix shell: {self.shell}")
 
-    if shell in (Shell.BASH, Shell.ZSH):
-        return f'eval "$(command pcd shell init {shell.value})"'
+    def render(self) -> str:
+        if self.shell is Shell.FISH:
+            return _fish()
 
-    raise ValueError(f"Unsupported Unix shell: {shell}")
+        if self.shell is Shell.BASH:
+            return _posix("bash_source")
 
+        if self.shell is Shell.ZSH:
+            return _posix("zsh_source")
 
-def render(shell: Shell) -> str:
-    if shell is Shell.FISH:
-        return _fish()
-
-    if shell is Shell.BASH:
-        return _posix("bash_source")
-
-    if shell is Shell.ZSH:
-        return _posix("zsh_source")
-
-    raise ValueError(f"Unsupported Unix shell: {shell}")
+        raise ValueError(f"Unsupported Unix shell: {self.shell}")
 
 
 def _posix(completion: Literal["bash_source", "zsh_source"]) -> str:

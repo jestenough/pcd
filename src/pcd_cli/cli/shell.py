@@ -1,16 +1,15 @@
-import sys
-
 import click
 
+from pcd_cli.environment import current_platform, Platform
 from pcd_cli.integrations.shell import (
+    ConfiguredShell,
     detect_shell,
     invoking_shell,
-    render_shell_integration,
     Shell,
-    ShellIntegration,
+    ShellChange,
     ShellIntegrationError,
-    ShellIntegrationState,
 )
+from pcd_cli.integrations.shells.registry import driver_for
 
 
 @click.group("shell")
@@ -26,15 +25,16 @@ def shell_commands() -> None:
 )
 def install_shell(shell: str | None) -> None:
     """Install persistent shell integration into the shell startup file."""
-    selected = _select_shell(shell, prompt=True)
-    integration = ShellIntegration.for_shell(selected)
-    if integration.install():
+    platform = current_platform()
+    selected = _select_shell(shell, platform, prompt=True)
+    integration = ConfiguredShell.for_shell(selected, platform)
+    result = integration.install()
+    if result is ShellChange.CHANGED:
         click.echo(f"Installed {integration.shell.value} integration in {integration.config_path}")
         click.echo(f"Reload the current shell with: {integration.reload_command()}")
         return
 
-    state = integration.state()
-    if state is ShellIntegrationState.MANAGED:
+    if result is ShellChange.UNCHANGED:
         click.echo(f"Shell integration is already installed in {integration.config_path}")
         return
 
@@ -51,7 +51,8 @@ def install_shell(shell: str | None) -> None:
 )
 def shell_status(shell: str | None) -> None:
     """Show shell configuration and whether this invocation used a wrapper."""
-    integration = ShellIntegration.for_shell(_select_shell(shell))
+    platform = current_platform()
+    integration = ConfiguredShell.for_shell(_select_shell(shell, platform), platform)
     click.echo(f"Shell: {integration.shell.value}")
     click.echo(f"Config: {integration.config_path}")
     click.echo(f"Configured: {integration.state().value}")
@@ -69,13 +70,14 @@ def shell_status(shell: str | None) -> None:
 )
 def uninstall_shell(shell: str | None) -> None:
     """Remove integration installed by `pcd shell install`."""
-    integration = ShellIntegration.for_shell(_select_shell(shell))
-    if integration.uninstall():
+    platform = current_platform()
+    integration = ConfiguredShell.for_shell(_select_shell(shell, platform), platform)
+    result = integration.uninstall()
+    if result is ShellChange.CHANGED:
         click.echo(f"Removed shell integration from {integration.config_path}")
         return
 
-    state = integration.state()
-    if state is ShellIntegrationState.MANUAL:
+    if result is ShellChange.MANUAL:
         click.echo(f"Integration in {integration.config_path} is managed manually; left unchanged.")
         return
 
@@ -90,18 +92,19 @@ def uninstall_shell(shell: str | None) -> None:
 )
 def init_shell(shell: str | None) -> None:
     """Print shell integration for manual dotfile management."""
-    selected = _select_shell(shell)
-    click.echo(render_shell_integration(selected), nl=False)
+    platform = current_platform()
+    selected = _select_shell(shell, platform)
+    click.echo(driver_for(selected, platform).render(), nl=False)
 
 
-def _select_shell(shell: str | None, *, prompt: bool = False) -> Shell:
+def _select_shell(shell: str | None, platform: Platform, *, prompt: bool = False) -> Shell:
     if shell is not None:
         return Shell(shell.casefold())
 
     try:
-        return detect_shell()
+        return detect_shell(platform)
     except ShellIntegrationError as exc:
-        if prompt and sys.platform == "win32":
+        if prompt and platform is Platform.WINDOWS:
             return _prompt_windows_shell()
         raise click.UsageError(str(exc)) from exc
 
