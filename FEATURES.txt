@@ -9,6 +9,7 @@ PROJECT NAVIGATION
         pcd
 
     The interactive picker opens when a project query has multiple matches.
+    Type to filter, use Up/Down to move, Enter to select, or Escape/Ctrl-C to cancel.
 
     Resolve a project whose name conflicts with a command:
         pcd --project <project>
@@ -73,6 +74,8 @@ CONFIGURATION
 
 
 SHELL INTEGRATION
+
+    Supported platforms: Linux, macOS, and Windows.
 
     Supported shells:
         Bash

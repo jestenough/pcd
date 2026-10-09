@@ -21,6 +21,7 @@ Supported shells:
 INSTALL
 -------
 Requires Python 3.12 or newer.
+Supported platforms are Linux, macOS, and Windows.
 
     pipx install git+https://github.com/jestenough/pcd.git
     pcd shell install
@@ -66,6 +67,8 @@ COMMANDS
 
 * Projects inside registered roots are discovered automatically.
 * You can register multiple scan roots.
+* When several projects match, type to filter the picker, use Up/Down to move,
+  Enter to select, or Escape/Ctrl-C to cancel.
 * Filter `pcd list` with `--manual`, `--discovered`, or `--missing`.
 * Use `pcd list --json` for machine-readable output.
 * Set `editor = "nvim"` in the configuration to choose an editor for `pcd config edit`.
