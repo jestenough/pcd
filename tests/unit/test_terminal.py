@@ -42,21 +42,25 @@ def test_windows_output_uses_console_and_restores_redirected_handle() -> None:
     import msvcrt
     from ctypes import wintypes
 
-    from prompt_toolkit.output.win32 import NoConsoleScreenBufferError
+    from prompt_toolkit.output.win32 import (  # type: ignore[attr-defined, unused-ignore]
+        NoConsoleScreenBufferError,
+    )
+
+    no_console_error = NoConsoleScreenBufferError
 
     stdout_handle = wintypes.DWORD(-11)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined, unused-ignore]
     kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
     kernel32.GetStdHandle.restype = wintypes.HANDLE
     kernel32.SetStdHandle.argtypes = [wintypes.DWORD, wintypes.HANDLE]
     kernel32.SetStdHandle.restype = wintypes.BOOL
     read_fd, write_fd = os.pipe()
     previous = kernel32.GetStdHandle(stdout_handle)
-    redirected = wintypes.HANDLE(msvcrt.get_osfhandle(write_fd))
+    redirected = wintypes.HANDLE(msvcrt.get_osfhandle(write_fd))  # type: ignore[attr-defined, unused-ignore]
     try:
         assert kernel32.SetStdHandle(stdout_handle, redirected)
 
-        with pytest.raises(NoConsoleScreenBufferError):
+        with pytest.raises(no_console_error):
             create_output(stdout=sys.stderr)
 
         with terminal_output() as output:
