@@ -1,10 +1,13 @@
+from contextlib import nullcontext
 from pathlib import Path
 
+import pytest
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.document import Document
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+import pcd_cli.picker as picker_module
 from pcd_cli.models import Project, ProjectSource
 from pcd_cli.picker import ProjectPicker
 
@@ -63,6 +66,18 @@ def test_empty_can_cancel() -> None:
         selected = ProjectPicker((), {}, input_stream=pipe, output=DummyOutput()).run()
 
     assert selected is None
+
+
+def test_run_creates_terminal_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    projects = (project("alpha"), project("beta"))
+    output = DummyOutput()
+    monkeypatch.setattr(picker_module, "terminal_output", lambda: nullcontext(output))
+
+    with create_pipe_input() as pipe:
+        pipe.send_text("\r")
+        selected = ProjectPicker(projects, {}, input_stream=pipe).run()
+
+    assert selected == projects[0]
 
 
 def test_render_paginates_long_list() -> None:

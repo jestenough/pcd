@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import sys
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -11,10 +11,10 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.processors import BeforeInput
-from prompt_toolkit.output.defaults import create_output
 
 from pcd_cli.filesystem import format_path
 from pcd_cli.search import rank_matches, rank_recent
+from pcd_cli.terminal import terminal_output
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -64,21 +64,22 @@ class ProjectPicker:
             height=1,
         )
         results = Window(content=FormattedTextControl(self._render), dont_extend_height=True)
-        output = self.output if self.output is not None else create_output(stdout=sys.stderr)
-        application: Application[Project | None] = Application(
-            layout=Layout(HSplit([search, results]), focused_element=search),
-            key_bindings=bindings,
-            full_screen=False,
-            erase_when_done=True,
-            input=self.input_stream,
-            output=output,
-        )
-        self.application = application
+        output_context = nullcontext(self.output) if self.output is not None else terminal_output()
+        with output_context as output:
+            application: Application[Project | None] = Application(
+                layout=Layout(HSplit([search, results]), focused_element=search),
+                key_bindings=bindings,
+                full_screen=False,
+                erase_when_done=True,
+                input=self.input_stream,
+                output=output,
+            )
+            self.application = application
 
-        try:
-            return application.run()
-        finally:
-            self.application = None
+            try:
+                return application.run()
+            finally:
+                self.application = None
 
     def _matching_projects(self, query: str) -> list[Project]:
         if query:
