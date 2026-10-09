@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-if sys.platform == "win32":
-    from pcd_cli.locking.windows import acquire, release
-elif os.name == "posix":
-    from pcd_cli.locking.unix import acquire, release
-else:
-    raise RuntimeError(f"File locking is not supported on {sys.platform}")
+from pcd_cli.environment import current_platform, Platform
+
+match current_platform():
+    case Platform.LINUX | Platform.MACOS:
+        from pcd_cli.locking.unix import acquire, release
+    case Platform.WINDOWS:
+        from pcd_cli.locking.windows import acquire, release
 
 if TYPE_CHECKING:
     from collections.abc import Generator
