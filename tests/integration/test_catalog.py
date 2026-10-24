@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pcd_cli.cache import ProjectCache
-from pcd_cli.catalog import ProjectCatalog
+from pcd_cli.catalog import ProjectCatalog, RefreshReport, discovered
 from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
@@ -24,6 +24,51 @@ def test_refresh_prefers_manual_on_duplicate(projects: ProjectCatalog, tmp_path:
     assert projects.config.add_project(manual)
 
     assert projects.refresh() == [manual]
+
+
+def test_discovered_excludes_manual_projects(tmp_path: Path) -> None:
+    manual = Project("manual", tmp_path / "manual", tmp_path / "manual", ProjectSource.MANUAL)
+    scanned = Project(
+        "scanned", tmp_path / "scanned", tmp_path / "scanned", ProjectSource.DISCOVERED
+    )
+
+    assert list(discovered((manual, scanned))) == [scanned]
+
+
+def test_refresh_report_compares_discovered_paths(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    root = tmp_path / "root"
+    first = root / "first"
+    (first / ".git").mkdir(parents=True)
+    manual_path = tmp_path / "manual"
+    manual_path.mkdir()
+    manual = Project("manual", canonical_path(manual_path), manual_path, ProjectSource.MANUAL)
+    assert projects.config.add_root(root)
+    assert projects.config.add_project(manual)
+
+    assert projects.refresh_with_report() == RefreshReport(added=1, removed=0, total=2)
+    assert projects.refresh_with_report() == RefreshReport(added=0, removed=0, total=2)
+
+    second = root / "second"
+    (second / ".git").mkdir(parents=True)
+    (first / ".git").rmdir()
+    assert projects.refresh_with_report() == RefreshReport(added=1, removed=1, total=2)
+    assert {project.path for project in discovered(projects.cache.load() or ())} == {second}
+
+
+def test_refresh_report_uses_snapshot_from_automatic_scan(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    assert projects.config.add_root(root)
+    projects.refresh()
+    repo = root / "new"
+    (repo / ".git").mkdir(parents=True)
+
+    assert [item.name for item in projects.search("new")] == ["new"]
+    assert projects.refresh_with_report() == RefreshReport(added=0, removed=0, total=1)
 
 
 def test_projects_build_cache_when_missing(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -127,6 +172,46 @@ def test_manual_add_rejects_existing_git_project(projects: ProjectCatalog, tmp_p
     manual = Project("custom", canonical_path(repo), repo, ProjectSource.MANUAL)
 
     assert projects.add_project(manual) is False
+
+
+def test_manual_add_does_not_publish_conflict_check(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "notes"
+    path.mkdir()
+    project = Project("notes", canonical_path(path), path, ProjectSource.MANUAL)
+    writes: list[list[Project]] = []
+    original_save = ProjectCache.save
+
+    def save(cache: ProjectCache, items: list[Project]) -> None:
+        writes.append(list(items))
+        original_save(cache, items)
+
+    monkeypatch.setattr(ProjectCache, "save", save)
+    assert projects.add_project(project)
+    assert writes == [[project]]
+
+
+def test_manual_add_conflict_does_not_publish_cache(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    assert projects.config.add_root(root)
+    manual = Project("custom", canonical_path(repo), repo, ProjectSource.MANUAL)
+    writes: list[list[Project]] = []
+
+    def save(_cache: ProjectCache, items: list[Project]) -> None:
+        writes.append(list(items))
+
+    monkeypatch.setattr(ProjectCache, "save", save)
+    assert projects.add_project(manual) is False
+    assert writes == []
 
 
 def test_fuzzy_match_refreshes_after_cache_miss(projects: ProjectCatalog, tmp_path: Path) -> None:

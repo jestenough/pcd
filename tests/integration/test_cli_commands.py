@@ -289,7 +289,72 @@ def test_roots_and_refresh_commands(
     assert "STATUS" in roots.output
     assert str(root) in roots.output
     assert roots.output.splitlines()[1].split()[-2:] == ["1", "available"]
-    assert "Found 1 projects." in refreshed.output
+    assert refreshed.output == "Projects refreshed:\n  Added:   0\n  Removed: 0\n  Total:   1\n"
+
+
+def test_refresh_reports_new_discovered_projects(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    monkeypatch.chdir(root)
+    assert runner.invoke(cli, ["init"]).exit_code == 0
+
+    first = root / "first"
+    (first / ".git").mkdir(parents=True)
+    assert runner.invoke(cli, ["refresh"]).output == (
+        "Projects refreshed:\n  Added:   1\n  Removed: 0\n  Total:   1\n"
+    )
+    assert runner.invoke(cli, ["refresh"]).output == (
+        "Projects refreshed:\n  Added:   0\n  Removed: 0\n  Total:   1\n"
+    )
+
+    second = root / "second"
+    (second / ".git").mkdir(parents=True)
+    assert runner.invoke(cli, ["refresh"]).output == (
+        "Projects refreshed:\n  Added:   1\n  Removed: 0\n  Total:   2\n"
+    )
+
+    (first / ".git").rmdir()
+    assert runner.invoke(cli, ["refresh"]).output == (
+        "Projects refreshed:\n  Added:   0\n  Removed: 1\n  Total:   1\n"
+    )
+
+
+def test_search_discovers_new_project_without_manual_refresh(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    monkeypatch.chdir(root)
+    assert runner.invoke(cli, ["init"]).exit_code == 0
+
+    repo = root / "new-repo"
+    (repo / ".git").mkdir(parents=True)
+    result = runner.invoke(cli, ["new-repo"])
+
+    assert result.exit_code == 0
+    assert str(repo) in result.output
+    assert [project.name for project in (ProjectCatalog.create().cache.load() or [])] == [
+        "new-repo"
+    ]
+
+
+def test_refresh_does_not_count_manual_projects_as_discovered(
+    runner: CliRunner,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "notes"
+    project.mkdir()
+    assert runner.invoke(cli, ["add", str(project)]).exit_code == 0
+
+    assert runner.invoke(cli, ["refresh"]).output == (
+        "Projects refreshed:\n  Added:   0\n  Removed: 0\n  Total:   1\n"
+    )
 
 
 def test_invalid_add_arguments(runner: CliRunner, tmp_path: Path) -> None:
