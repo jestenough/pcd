@@ -647,7 +647,7 @@ def test_config_edit_reports_editor_failure(
 def test_config_validate_reports_precise_error(runner: CliRunner) -> None:
     config = ProjectCatalog.create().config
     config.path.parent.mkdir(parents=True)
-    config.path.write_text("roots = [", encoding="utf-8")
+    config.path.write_text("roots = [@]", encoding="utf-8")
 
     result = runner.invoke(cli, ["config", "validate"])
 
