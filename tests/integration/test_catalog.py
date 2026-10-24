@@ -35,9 +35,7 @@ def test_discovered_excludes_manual_projects(tmp_path: Path) -> None:
     assert list(discovered((manual, scanned))) == [scanned]
 
 
-def test_refresh_report_compares_discovered_paths(
-    projects: ProjectCatalog, tmp_path: Path
-) -> None:
+def test_refresh_report_compares_discovered_paths(projects: ProjectCatalog, tmp_path: Path) -> None:
     root = tmp_path / "root"
     first = root / "first"
     (first / ".git").mkdir(parents=True)

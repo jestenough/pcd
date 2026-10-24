@@ -27,8 +27,7 @@ class RootListRow(NamedTuple):
     def from_root(cls, root: Path, projects: Sequence[Project]) -> RootListRow:
         resolved_root = canonical_path(root)
         project_count = sum(
-            project.path.is_relative_to(resolved_root)
-            for project in discovered(projects)
+            project.path.is_relative_to(resolved_root) for project in discovered(projects)
         )
 
         return cls(
