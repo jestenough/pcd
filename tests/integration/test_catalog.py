@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pcd_cli.cache import ProjectCache
-from pcd_cli.catalog import ProjectCatalog, RefreshReport, discovered
+from pcd_cli.catalog import discovered, ProjectCatalog, RefreshReport
 from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
