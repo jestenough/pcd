@@ -5,8 +5,9 @@ from typing import ClassVar, Literal, NamedTuple, TYPE_CHECKING
 
 import click
 
+from pcd_cli.catalog import discovered
 from pcd_cli.filesystem import canonical_path, format_path
-from pcd_cli.models import ExitCode, ProjectSource
+from pcd_cli.models import ExitCode
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -26,9 +27,7 @@ class RootListRow(NamedTuple):
     def from_root(cls, root: Path, projects: Sequence[Project]) -> RootListRow:
         resolved_root = canonical_path(root)
         project_count = sum(
-            project.path.is_relative_to(resolved_root)
-            for project in projects
-            if project.source is ProjectSource.DISCOVERED
+            project.path.is_relative_to(resolved_root) for project in discovered(projects)
         )
 
         return cls(
@@ -106,8 +105,14 @@ def roots(catalog: ProjectCatalog) -> None:
 @click.command()
 @click.pass_obj
 def refresh(catalog: ProjectCatalog) -> None:
-    """Rescan roots and rebuild the project cache."""
-    click.echo(f"Found {len(catalog.refresh())} projects.")
+    """Rescan roots and report added, removed, and total projects."""
+    report = catalog.refresh_with_report()
+    click.echo(
+        f"Projects refreshed:\n"
+        f"  Added:   {report.added}\n"
+        f"  Removed: {report.removed}\n"
+        f"  Total:   {report.total}"
+    )
 
 
 root_commands = (init, uninit, roots, refresh)

@@ -48,7 +48,7 @@ COMMANDS
     pcd init                     Add the current directory as a scan root
     pcd uninit                   Remove the current directory from scan roots
     pcd roots                    List scan roots
-    pcd refresh                  Rescan roots and rebuild the project cache
+    pcd refresh                  Rescan roots, show added, removed, and total projects
 
     pcd list [options]           List and filter known projects
     pcd config path              Print the configuration file path

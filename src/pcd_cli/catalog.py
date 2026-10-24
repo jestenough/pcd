@@ -7,14 +7,27 @@ from pcd_cli.cache import ProjectCache
 from pcd_cli.config import Config
 from pcd_cli.filesystem import ApplicationPaths, canonical_path
 from pcd_cli.history import UsageHistory
+from pcd_cli.models import ProjectSource
 from pcd_cli.scanner import ProjectScanner
 from pcd_cli.search import rank_matches
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from pathlib import Path
 
     from pcd_cli.models import Project
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshReport:
+    added: int
+    removed: int
+    total: int
+
+
+def discovered(projects: Iterable[Project]) -> Iterator[Project]:
+    """Yield projects discovered by the scanner, excluding manual registrations."""
+    return (project for project in projects if project.source is ProjectSource.DISCOVERED)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +85,27 @@ class ProjectCatalog:
         return rank_matches(self.refresh(), query, usage)
 
     def refresh(self) -> list[Project]:
+        """Rebuild the catalog from config and scan, then publish it to the cache."""
+        projects = self._build_projects()
+        self.cache.save(projects)
+
+        return projects
+
+    def refresh_with_report(self) -> RefreshReport:
+        """Rescan roots, persist the new snapshot, and diff it against the cache."""
+        previous = {project.path for project in discovered(self.cache.load() or ())}
+        projects = self._build_projects()
+        current = {project.path for project in discovered(projects)}
+
+        self.cache.save(projects)
+
+        return RefreshReport(
+            added=len(current - previous),
+            removed=len(previous - current),
+            total=len(projects),
+        )
+
+    def _build_projects(self) -> list[Project]:
         settings = self.config.load()
         projects = list(settings.manual_projects)
         known_paths = {project.path for project in projects}
@@ -84,8 +118,6 @@ class ProjectCatalog:
             projects.append(project)
 
         projects.sort(key=lambda project: (project.name.casefold(), str(project.path)))
-        self.cache.save(projects)
-
         return projects
 
     def record_usage(self, project: Project) -> None:
@@ -109,7 +141,7 @@ class ProjectCatalog:
 
     def add_project(self, project: Project) -> bool:
         # An authoritative scan prevents stale cache data from hiding a repository.
-        if any(item.path == project.path for item in self.refresh()):
+        if any(item.path == project.path for item in self._build_projects()):
             return False
 
         if not self.config.add_project(project):
