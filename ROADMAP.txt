@@ -2,66 +2,32 @@ PCD ROADMAP
 ===========
 
 Current release: 0.2.5. Next release: 0.2.6.
-Work through releases in the order below. Within each release, follow the listed order.
+Work through planned releases in the order below. Within each release, follow the listed order.
 Versions after 0.2.6 are planning targets, not fixed delivery dates.
 Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
 
 
-0.2.4 - WINDOWS SHELL SUPPORT
------------------------------
+0.2.6 - PERFORMANCE AND CLI OUTPUT
+----------------------------------
 
-    1. Support Windows PowerShell 5.1 and PowerShell 7+ with native wrappers.
-    2. Support Command Prompt through a managed wrapper and a user-level DOSKEY AutoRun entry.
-       Preserve unrelated AutoRun commands and never modify the shared PATH.
-    3. Support Git Bash through the Bash backend and keep WSL on the Linux integration path.
-    4. Use cross-platform inter-process file locking for configuration and cache writes.
-    5. Keep manual `pcd shell init <shell>` setup available for every supported shell.
-    6. Test PowerShell, CMD, Git Bash, registry setup, rollback, and package contents on Windows.
-
-RELEASE ACCEPTANCE
-    Existing Linux and macOS checks remain green.
-    The dedicated Windows job passes on windows-latest with Windows PowerShell 5.1, PowerShell 7+,
-    CMD, Git Bash, package installation, type checking, and cleanup.
-    The wheel includes every shell and locking backend.
-
-
-0.2.5 - WINDOWS TERMINAL AND SHELL HARDENING
---------------------------------------------
-
-    1. Keep stdout reserved for the shell navigation protocol while rendering the interactive
-       picker through the controlling terminal, including redirected PowerShell invocations.
-    2. Centralize supported platform and shell detection with explicit driver dispatch.
-       Keep platform-specific imports lazy and reject unsupported combinations before execution.
-    3. Share startup-file lifecycle behavior across shell drivers and return typed lifecycle
-       results without repeated configuration or registry reads.
-    4. Stream shell configuration inspection and preserve atomic updates and rollback behavior.
-    5. Cover Windows console handle restoration, platform boundaries, lazy imports, shell
-       lifecycle behavior, package contents, and platform-aware wheel smoke checks.
-
-RELEASE ACCEPTANCE
-    Linux, macOS, and Windows test and coverage jobs pass at the required threshold.
-    Format, lint, strict type checking, build, and wheel smoke checks pass.
-    PowerShell capture keeps the selected path on stdout without losing interactive picker output.
-
-
-0.2.6 - PERFORMANCE
--------------------
-
-    1. Establish benchmark baselines before changing algorithms.
+    1. Extend the existing cache, search, memory, and scan benchmarks and record baselines
+       before changing algorithms.
        Cover CLI startup, exact/fuzzy navigation, completion, shell wrappers, and history I/O.
        Include cache misses, empty caches, add operations, and large/wide directory trees.
        Measure broad and selective queries at multiple catalog sizes.
        Measure time separately from memory; report distributions, not only best runs.
     2. Avoid repeated cache/history loads and repeated ranking within one CLI operation.
+       Preserve the existing exact-match fast path and cache-only completion.
     3. Avoid scanning all roots twice during `pcd add`.
        Preserve conflict detection and config/cache correctness.
     4. Expand shell E2E coverage beyond the behavior changed in 0.2.4 and 0.2.5.
     5. Compare end-to-end latency and memory with the baseline.
        Retain optimizations only when they improve measured behavior without regressions.
-
-CONSTRAINTS
-    Preserve public behavior and storage formats.
-    Do not introduce a new database or background service in this release.
+    6. Add a compact Added / Removed / Total summary to `pcd refresh` and test it.
+       Add an optional detailed mode that prints added and removed paths.
+    7. When `pcd <project>` misses an exact name in the cache, discover newly added
+       repositories and navigate to an exact match without requiring `pcd refresh`.
+       Avoid scanning on exact cache hits; measure the cost of repeated misses.
 
 
 0.2.7 - DATA RELIABILITY
@@ -85,16 +51,14 @@ CONSTRAINTS
 0.3.0 - PROJECT INSPECTION AND EXCLUSIONS
 ----------------------------------------
 
-    1. Handle duplicate project names explicitly and preserve path-based selection.
-       Keep `--project` for names reserved by commands.
-    2. Add `pcd info <project>` with metadata and status.
+    1. Add `pcd info <project>` with metadata and status.
        Add appropriate project completion with the command.
-    3. Extend `pcd remove <project>` to manual and discovered projects without deleting directories.
+    2. Extend `pcd remove <project>` to manual and discovered projects without deleting directories.
        Unregister manual projects and persist discovered project paths as exclusions.
        Let `pcd add <path>` restore excluded projects and complete all removable projects.
-    4. Add `pcd doctor`.
+    3. Add `pcd doctor`.
        Check configuration, cache, roots, missing projects, PATH, and detectable shell integration.
-    5. Document and test refresh behavior with exclusions and unavailable projects.
+    4. Document and test refresh behavior with exclusions and unavailable projects.
        Preserve user configuration and report stale references rather than deleting them silently.
 
 
@@ -151,8 +115,6 @@ REQUIREMENTS
     5. Review frecency ranking using the existing usage count and last-used timestamp.
        History collection and bounded retention already exist; do not reimplement them.
        Keep history lightweight and preserve deterministic unique exact-name resolution.
-    6. Make `pcd refresh` report how many new projects were found.
-       When an additional option is provided, also print the paths of the new projects.
 
 
 0.7.0 - ADDITIONAL SHELL SUPPORT
