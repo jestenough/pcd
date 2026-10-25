@@ -9,9 +9,12 @@ from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     import pytest
+
+    from pcd_cli.cache import ProjectCacheEntry
 
 
 def test_refresh_prefers_manual_on_duplicate(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -292,6 +295,67 @@ def test_exact_duplicates_use_history(projects: ProjectCatalog, tmp_path: Path) 
     projects.history.record(items[1].path)
 
     assert projects.resolve("same").matches == [items[1], items[0]]
+
+
+def test_search_fuzzy_miss_keeps_streaming_exact_lookup(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    assert projects.config.add_root(root)
+    projects.refresh()
+    (root / "medcab" / ".git").mkdir(parents=True)
+    reads = 0
+    original_entries = ProjectCache._entries
+
+    def entries(cache: ProjectCache) -> Iterator[ProjectCacheEntry]:
+        nonlocal reads
+        reads += 1
+        return original_entries(cache)
+
+    monkeypatch.setattr(ProjectCache, "_entries", entries)
+
+    assert [item.name for item in projects.resolve("mdc").matches] == ["medcab"]
+    assert reads == 2
+
+
+def test_fuzzy_hit_reuses_one_full_cache_load(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    items = [
+        Project(name, tmp_path / name, tmp_path / name, ProjectSource.MANUAL)
+        for name in ("alpha", "medcab", "beta")
+    ]
+    projects.cache.save(items)
+    reads = 0
+    original_entries = ProjectCache._entries
+
+    def entries(cache: ProjectCache) -> Iterator[ProjectCacheEntry]:
+        nonlocal reads
+        reads += 1
+        yield from original_entries(cache)
+
+    monkeypatch.setattr(ProjectCache, "_entries", entries)
+    assert projects.resolve("mdc").matches == [items[1]]
+    assert reads == 2
+
+
+def test_fuzzy_many_results_preserves_history_order(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    items = [
+        Project(
+            f"app-{index:02d}", tmp_path / str(index), tmp_path / str(index), ProjectSource.MANUAL
+        )
+        for index in range(50)
+    ]
+    projects.cache.save(items)
+    projects.history.record(items[-1].path)
+
+    matches = projects.resolve("app-").matches
+
+    assert len(matches) == len(items)
+    assert matches[0] == items[-1]
 
 
 def test_exact_hit_avoids_full_decode_and_history(

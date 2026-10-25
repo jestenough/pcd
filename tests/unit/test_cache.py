@@ -30,6 +30,17 @@ def test_cache_round_trip(tmp_path: Path) -> None:
     assert cache.find_prefix("re") == [item]
 
 
+def test_exact_at_both_ends_and_complete_miss(tmp_path: Path) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    first = project(tmp_path / "first", "first")
+    last = project(tmp_path / "last", "last")
+    cache.save((first, project(tmp_path / "middle", "middle"), last))
+
+    assert cache.find_exact("FIRST") == [first]
+    assert cache.find_exact("LAST") == [last]
+    assert cache.find_exact("absent") == []
+
+
 def test_cache_missing_or_corrupt(tmp_path: Path) -> None:
     cache = ProjectCache(tmp_path / "projects.jsonl")
 
