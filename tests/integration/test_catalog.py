@@ -65,7 +65,7 @@ def test_refresh_report_uses_snapshot_from_automatic_scan(
     repo = root / "new"
     (repo / ".git").mkdir(parents=True)
 
-    assert [item.name for item in projects.search("new")] == ["new"]
+    assert [item.name for item in projects.resolve("new").matches] == ["new"]
     assert projects.refresh_with_report() == RefreshReport(added=0, removed=0, total=1)
 
 
@@ -98,6 +98,20 @@ def test_completion_candidates_are_empty_without_cache(projects: ProjectCatalog)
     assert list(projects.completion_candidates("repo")) == []
 
 
+def test_completion_uses_only_cache(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = Project("repo", tmp_path / "repo", tmp_path / "repo", ProjectSource.MANUAL)
+    projects.cache.save((item,))
+
+    def fail(*_args: object) -> None:
+        raise AssertionError("completion must not scan or load history")
+
+    monkeypatch.setattr("pcd_cli.catalog.ProjectScanner.scan", fail)
+    monkeypatch.setattr("pcd_cli.catalog.UsageHistory.load", fail)
+    assert list(projects.completion_candidates("re")) == [item]
+
+
 def test_matches_refreshes_after_cache_miss(projects: ProjectCatalog, tmp_path: Path) -> None:
     root = tmp_path / "root"
     root.mkdir()
@@ -107,7 +121,7 @@ def test_matches_refreshes_after_cache_miss(projects: ProjectCatalog, tmp_path: 
     repo = root / "new"
     (repo / ".git").mkdir(parents=True)
 
-    assert [item.name for item in projects.search("new")] == ["new"]
+    assert [item.name for item in projects.resolve("new").matches] == ["new"]
 
 
 def test_exact_only_does_not_use_fuzzy(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -117,7 +131,7 @@ def test_exact_only_does_not_use_fuzzy(projects: ProjectCatalog, tmp_path: Path)
     assert projects.config.add_project(project)
     projects.refresh()
 
-    assert projects.search("med", exact_only=True) == []
+    assert projects.resolve("med", exact_only=True).matches == []
 
 
 def test_record_updates_history(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -221,7 +235,7 @@ def test_fuzzy_match_refreshes_after_cache_miss(projects: ProjectCatalog, tmp_pa
     repo = root / "medcab"
     (repo / ".git").mkdir(parents=True)
 
-    assert [item.name for item in projects.search("mdc")] == ["medcab"]
+    assert [item.name for item in projects.resolve("mdc").matches] == ["medcab"]
 
 
 def test_search_recovers_when_cache_disappears(
@@ -235,7 +249,7 @@ def test_search_recovers_when_cache_disappears(
     projects.cache.save(())
     monkeypatch.setattr(ProjectCache, "load", lambda _cache: None)
 
-    assert [item.name for item in projects.search("repo")] == ["repo"]
+    assert [item.name for item in projects.resolve("repo").matches] == ["repo"]
 
 
 def test_parent_root_prefers_nearest_root(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -277,7 +291,39 @@ def test_exact_duplicates_use_history(projects: ProjectCatalog, tmp_path: Path) 
     projects.cache.save(items)
     projects.history.record(items[1].path)
 
-    assert projects.search("same") == [items[1], items[0]]
+    assert projects.resolve("same").matches == [items[1], items[0]]
+
+
+def test_exact_hit_avoids_full_decode_and_history(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "repo"
+    project = Project("repo", path, path, ProjectSource.MANUAL)
+    projects.cache.save((project,))
+
+    def fail(*_args: object) -> None:
+        raise AssertionError("exact hit must not load the full cache or history")
+
+    monkeypatch.setattr(ProjectCache, "load", fail)
+    monkeypatch.setattr(type(projects.history), "load", fail)
+    monkeypatch.setattr(ProjectCatalog, "refresh", fail)
+    assert projects.resolve("repo").matches == [project]
+
+
+def test_duplicates_after_refresh_use_same_history_order(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    first = Project("same", tmp_path / "first", tmp_path / "first", ProjectSource.MANUAL)
+    second = Project("same", tmp_path / "second", tmp_path / "second", ProjectSource.MANUAL)
+    assert projects.config.add_project(first)
+    assert projects.config.add_project(second)
+    projects.history.record(second.path)
+
+    fresh = projects.resolve("same", exact_only=True)
+    cached = projects.resolve("same", exact_only=True)
+
+    assert fresh.matches == cached.matches == [second, first]
+    assert fresh.usage == cached.usage
 
 
 def test_manual_add_handles_concurrent_config_change(

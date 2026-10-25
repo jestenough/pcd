@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from contextlib import nullcontext
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.document import Document
 from prompt_toolkit.input.defaults import create_pipe_input
@@ -10,6 +12,14 @@ from prompt_toolkit.output import DummyOutput
 import pcd_cli.picker as picker_module
 from pcd_cli.models import Project, ProjectSource
 from pcd_cli.picker import ProjectPicker
+from pcd_cli.search import rank_matches
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    import pytest
+
+    from pcd_cli.models import ProjectUsage
 
 
 def project(name: str) -> Project:
@@ -45,6 +55,42 @@ def test_typing_filters() -> None:
         selected = ProjectPicker(projects, {}, input_stream=pipe, output=DummyOutput()).run()
 
     assert selected == projects[1]
+
+
+def test_pre_ranked_query_is_not_ranked_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    projects = (project("beta"), project("alpha"))
+    rankings = 0
+
+    def rank(
+        items: Iterable[Project], query: str, usage: Mapping[Path, ProjectUsage]
+    ) -> list[Project]:
+        nonlocal rankings
+        rankings += 1
+        return rank_matches(items, query, usage)
+
+    monkeypatch.setattr(picker_module, "rank_matches", rank)
+    with create_pipe_input() as pipe:
+        pipe.send_text("\r")
+        selected = ProjectPicker(
+            projects, {}, query="a", ranked=True, input_stream=pipe, output=DummyOutput()
+        ).run()
+
+    assert selected == projects[0]
+    assert rankings == 0
+
+
+def test_pre_ranked_picker_refilters_and_restores_initial_order() -> None:
+    projects = (project("beta"), project("alpha"))
+    picker = ProjectPicker(projects, {}, query="a", ranked=True)
+    picker.matches = list(projects)
+
+    picker._filter(Buffer(document=Document("al")))
+    assert picker.matches == [projects[1]]
+    picker._filter(Buffer(document=Document("")))
+    assert picker.matches == [projects[1], projects[0]]
+    picker._filter(Buffer(document=Document("a")))
+    assert picker.matches == list(projects)
+    assert picker.selected_index == 1
 
 
 def test_escape_returns_none() -> None:

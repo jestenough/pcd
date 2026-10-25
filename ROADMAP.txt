@@ -10,22 +10,24 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
 0.2.6 - PERFORMANCE AND CLI OUTPUT
 ----------------------------------
 
+Search/picker scope for 0.2.6: reuse the history snapshot and initial ordering
+within one CLI operation. Full resolution and storage work belongs to 0.3.0.
+The numbered list contains only remaining work.
+
     1. Extend the existing cache, search, memory, and scan benchmarks and record baselines
        before changing algorithms.
        Cover CLI startup, exact/fuzzy navigation, completion, shell wrappers, and history I/O.
        Include cache misses, empty caches, add operations, and large/wide directory trees.
        Measure broad and selective queries at multiple catalog sizes.
        Measure time separately from memory; report distributions, not only best runs.
-    2. Avoid repeated cache/history loads and repeated ranking within one CLI operation.
-       Preserve the existing exact-match fast path and cache-only completion.
-    3. Avoid scanning all roots twice during `pcd add`.
+    2. Avoid scanning all roots twice during `pcd add`.
        Preserve conflict detection and config/cache correctness.
-    4. Expand shell E2E coverage beyond the behavior changed in 0.2.4 and 0.2.5.
-    5. Compare end-to-end latency and memory with the baseline.
+    3. Expand shell E2E coverage beyond the behavior changed in 0.2.4 and 0.2.5.
+    4. Compare end-to-end latency and memory with the baseline.
        Retain optimizations only when they improve measured behavior without regressions.
-    6. Add a compact Added / Removed / Total summary to `pcd refresh` and test it.
+    5. Add a compact Added / Removed / Total summary to `pcd refresh` and test it.
        Add an optional detailed mode that prints added and removed paths.
-    7. When `pcd <project>` misses an exact name in the cache, discover newly added
+    6. When `pcd <project>` misses an exact name in the cache, discover newly added
        repositories and navigate to an exact match without requiring `pcd refresh`.
        Avoid scanning on exact cache hits; measure the cost of repeated misses.
 
@@ -48,7 +50,19 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
        Verify supported platforms and measure the extra write cost.
 
 
-0.3.0 - PROJECT INSPECTION AND EXCLUSIONS
+0.3.0 - PROJECT STORAGE AND RESOLUTION
+--------------------------------------
+
+    Design and validate the storage migration independently of aliases.
+    Complete the resolve contract: one storage-agnostic lookup, refresh/retry in the
+    resolver, and a picker that displays a bounded result set and re-resolves edited
+    queries. Preserve exact duplicates, fuzzy ranking, manual registrations, and
+    cache-only completion. Remove the fuzzy fallback's second JSONL pass without
+    regressing exact lookup. Compare startup, refresh, time, disk, and memory on all
+    supported platforms before replacing JSONL; do not mix migration with aliases.
+
+
+0.3.1 - PROJECT INSPECTION AND EXCLUSIONS
 ----------------------------------------
 
     1. Add `pcd info <project>` with metadata and status.

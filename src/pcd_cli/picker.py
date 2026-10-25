@@ -40,6 +40,8 @@ class ProjectPicker:
     query: str = ""
     input_stream: Input | None = None
     output: Output | None = None
+    # The supplied projects are already ordered for the non-empty initial query.
+    ranked: bool = False
 
     matches: list[Project] = field(default_factory=list, init=False)
     selected_index: int = field(default=0, init=False)
@@ -47,6 +49,7 @@ class ProjectPicker:
 
     def run(self) -> Project | None:
         self.matches = self._matching_projects(self.query)
+        self.selected_index = 0
         buffer = Buffer(
             document=Document(self.query, cursor_position=len(self.query)),
             multiline=False,
@@ -82,6 +85,8 @@ class ProjectPicker:
                 self.application = None
 
     def _matching_projects(self, query: str) -> list[Project]:
+        if self.ranked and query and query == self.query:
+            return list(self.projects)
         if query:
             return rank_matches(self.projects, query, self.usage)
         return rank_recent(self.projects, self.usage)

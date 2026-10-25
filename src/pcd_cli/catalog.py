@@ -12,10 +12,10 @@ from pcd_cli.scanner import ProjectScanner
 from pcd_cli.search import rank_matches
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable, Iterator, Mapping
     from pathlib import Path
 
-    from pcd_cli.models import Project
+    from pcd_cli.models import Project, ProjectUsage
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +23,14 @@ class RefreshReport:
     added: int
     removed: int
     total: int
+
+
+@dataclass(frozen=True, slots=True)
+class Resolution:
+    """Ordered results and the usage snapshot shared with the picker."""
+
+    matches: list[Project]
+    usage: Mapping[Path, ProjectUsage] | None = None
 
 
 def discovered(projects: Iterable[Project]) -> Iterator[Project]:
@@ -58,31 +66,34 @@ class ProjectCatalog:
         if matches is not None:
             yield from matches
 
-    def search(self, query: str, exact_only: bool = False) -> list[Project]:
+    def resolve(self, query: str, exact_only: bool = False) -> Resolution:
+        """Resolve from cache; refresh and retry when no result is found."""
         # The common exact-hit path avoids loading the full cache and history.
         exact_matches = self.cache.find_exact(query)
         if exact_matches is None:
-            return self._search_projects(self.refresh(), query, exact_only)
+            return self._resolve_projects(self.refresh(), query, exact_only)
 
         if exact_matches:
             if len(exact_matches) == 1:
-                return exact_matches
-            return rank_matches(exact_matches, query, self.history.load())
+                return Resolution(exact_matches)
+            usage = self.history.load()
+            return Resolution(rank_matches(exact_matches, query, usage), usage)
 
         if exact_only:
-            return self._search_projects(self.refresh(), query, exact_only=True)
+            return self._resolve_projects(self.refresh(), query, True)
 
+        # Only fuzzy fallback needs full Project objects.
         cached = self.cache.load()
         if cached is None:
-            return self._search_projects(self.refresh(), query, exact_only=False)
+            return self._resolve_projects(self.refresh(), query, False)
 
         usage = self.history.load()
         matches = rank_matches(cached, query, usage)
         if matches:
-            return matches
+            return Resolution(matches, usage)
 
         # A miss can mean a repository appeared after the last refresh.
-        return rank_matches(self.refresh(), query, usage)
+        return self._resolve_projects(self.refresh(), query, False, usage)
 
     def refresh(self) -> list[Project]:
         """Rebuild the catalog from config and scan, then publish it to the cache."""
@@ -177,15 +188,20 @@ class ProjectCatalog:
 
         return closest_root
 
-    def _search_projects(
+    def _resolve_projects(
         self,
         projects: list[Project],
         query: str,
         exact_only: bool,
-    ) -> list[Project]:
+        usage: Mapping[Path, ProjectUsage] | None = None,
+    ) -> Resolution:
         needle = query.casefold()
         exact_matches = [project for project in projects if project.name.casefold() == needle]
+        if len(exact_matches) > 1:
+            usage = self.history.load() if usage is None else usage
+            return Resolution(rank_matches(exact_matches, query, usage), usage)
         if exact_matches or exact_only:
-            return exact_matches
+            return Resolution(exact_matches)
 
-        return rank_matches(projects, query, self.history.load())
+        usage = self.history.load() if usage is None else usage
+        return Resolution(rank_matches(projects, query, usage), usage)

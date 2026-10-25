@@ -19,6 +19,8 @@ from pcd_cli.picker import ProjectPicker
 if TYPE_CHECKING:
     from click.testing import CliRunner
 
+    from pcd_cli.models import ProjectUsage
+
 
 def test_project_argument_dispatch(runner: CliRunner, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
@@ -83,7 +85,7 @@ def test_duplicate_name_uses_choice(
     monkeypatch.setattr(
         navigation_module,
         "select_project",
-        lambda _app, projects, _query="": projects[1],
+        lambda _app, projects, _query="", **_kwargs: projects[1],
     )
     result = runner.invoke(cli, ["same"])
 
@@ -105,6 +107,41 @@ def test_select_project_opens_picker_for_multiple_matches(
     assert select_project(projects, matches, "") is matches[1]
 
 
+@pytest.mark.parametrize("query", ["same", "sam"])
+def test_navigation_reuses_search_history_in_picker(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    query: str,
+) -> None:
+    for name in ("first", "second"):
+        path = tmp_path / name
+        path.mkdir()
+        assert runner.invoke(cli, ["add", str(path), "--name", "same"]).exit_code == 0
+
+    loads = 0
+    original_load = UsageHistory.load
+
+    def load(history: UsageHistory) -> dict[Path, ProjectUsage]:
+        nonlocal loads
+        loads += 1
+        return original_load(history)
+
+    def run(picker: ProjectPicker) -> Project:
+        assert picker.ranked
+        assert picker.usage == {}
+        return picker.projects[0]
+
+    monkeypatch.setattr(UsageHistory, "load", load)
+    monkeypatch.setattr(UsageHistory, "record", lambda _history, _path: None)
+    monkeypatch.setattr(ProjectPicker, "run", run)
+
+    result = runner.invoke(cli, [query])
+
+    assert result.exit_code == 0
+    assert loads == 1
+
+
 def test_cancel_multiple_does_not_refresh(
     runner: CliRunner,
     tmp_path: Path,
@@ -115,7 +152,7 @@ def test_cancel_multiple_does_not_refresh(
         path.mkdir()
         assert runner.invoke(cli, ["add", str(path)]).exit_code == 0
 
-    monkeypatch.setattr(navigation_module, "select_project", lambda *_args: None)
+    monkeypatch.setattr(navigation_module, "select_project", lambda *_args, **_kwargs: None)
 
     def fail(_self: ProjectCatalog) -> list[Project]:
         raise AssertionError("cancel must not refresh")

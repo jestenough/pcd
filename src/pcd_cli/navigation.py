@@ -15,9 +15,10 @@ from pcd_cli.integrations.shell import (
 from pcd_cli.models import ExitCode, ProjectSource
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
-    from pcd_cli.models import Project
+    from pcd_cli.models import Project, ProjectUsage
 
 
 def navigate_to_project(
@@ -25,13 +26,20 @@ def navigate_to_project(
     query: str | None = None,
     exact_only: bool = False,
 ) -> None:
-    matches = catalog.projects() if query is None else catalog.search(query, exact_only=exact_only)
+    result = None if query is None else catalog.resolve(query, exact_only=exact_only)
+    matches = catalog.projects() if result is None else result.matches
     if not matches:
         suffix = "" if query is None else f": {query}"
         click.echo(f"Project not found{suffix}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
-    selected = select_project(catalog, matches, query or "")
+    selected = select_project(
+        catalog,
+        matches,
+        query or "",
+        usage=None if result is None else result.usage,
+        ranked=result is not None,
+    )
     if selected is not None:
         _open_project(catalog, selected)
 
@@ -40,6 +48,9 @@ def select_project(
     catalog: ProjectCatalog,
     projects: Sequence[Project],
     query: str = "",
+    *,
+    usage: Mapping[Path, ProjectUsage] | None = None,
+    ranked: bool = False,
 ) -> Project | None:
     if len(projects) == 1:
         return projects[0]
@@ -47,7 +58,12 @@ def select_project(
         # Import lazily so shell completion never initializes terminal UI machinery.
         from pcd_cli.picker import ProjectPicker
 
-        return ProjectPicker(projects, catalog.history.load(), query).run()
+        return ProjectPicker(
+            projects,
+            catalog.history.load() if usage is None else usage,
+            query,
+            ranked=ranked,
+        ).run()
 
 
 def project_completions(value: str) -> list[CompletionItem]:
