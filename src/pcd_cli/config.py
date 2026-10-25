@@ -137,7 +137,7 @@ class Config:
             text = self.path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise InvalidConfigError(f"Config is not valid UTF-8: {self.path}") from exc
-        
+
         try:
             return tomlkit.parse(text)
         except tomlkit.exceptions.ParseError as exc:
@@ -157,10 +157,10 @@ def _default_document() -> TOMLDocument:
     scan["hidden"] = True
     scan["follow_symlinks"] = False
     scan["exclude"] = sorted(DEFAULT_EXCLUDED_NAMES)
-    
+
     document["scan"] = scan
     document["projects"] = tomlkit.aot()
-    
+
     return document
 
 
