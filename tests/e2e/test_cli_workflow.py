@@ -208,3 +208,105 @@ def test_shell_init_status_and_navigation_work_in_each_shell(tmp_path: Path, she
         "Invoked through wrapper: no",
     ]
     assert str(repo) in result.stdout.splitlines()
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+def test_installed_shell_integration_runs_and_uninstalls(tmp_path: Path, shell: str) -> None:
+    executable = shutil.which(shell)
+    if executable is None:
+        pytest.skip(f"{shell} is not installed")
+    environment = _environment(tmp_path)
+    environment.pop("ZDOTDIR", None)
+    environment.pop("_PCD_COMPLETE", None)
+    root = tmp_path / "projects"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    subprocess.run([_pcd_executable(), "init"], cwd=root, env=environment, check=True)
+
+    config = (
+        Path(environment["XDG_CONFIG_HOME"]) / "fish" / "config.fish"
+        if shell == "fish"
+        else Path(environment["HOME"]) / (".bashrc" if shell == "bash" else ".zshrc")
+    )
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("# user settings\n", encoding="utf-8")
+    installed = subprocess.run(
+        [_pcd_executable(), "shell", "install", shell],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert installed.returncode == 0, installed.stderr
+    assert "# user settings\n" in config.read_text(encoding="utf-8")
+    assert "# >>> pcd shell integration >>>" in config.read_text(encoding="utf-8")
+
+    source = 'source "$1"' if shell != "fish" else "source $argv[1]"
+    result = subprocess.run(
+        [executable, "-c", f"{source}; pcd repo; pwd", "pcd-test", str(config)]
+        if shell != "fish"
+        else [executable, "-c", f"{source}; pcd repo; pwd", str(config)],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == str(repo)
+
+    removed = subprocess.run(
+        [_pcd_executable(), "shell", "uninstall", shell],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert removed.returncode == 0, removed.stderr
+    assert config.read_text(encoding="utf-8") == "# user settings\n"
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+def test_shell_wrapper_discovers_exact_miss_and_preserves_cwd_on_failure(
+    tmp_path: Path, shell: str
+) -> None:
+    executable = shutil.which(shell)
+    if executable is None:
+        pytest.skip(f"{shell} is not installed")
+    environment = _environment(tmp_path)
+    environment.pop("_PCD_COMPLETE", None)
+    root = tmp_path / "projects"
+    root.mkdir()
+    subprocess.run([_pcd_executable(), "init"], cwd=root, env=environment, check=True)
+    repo = root / "new repo"
+    (repo / ".git").mkdir(parents=True)
+
+    initialize = (
+        "command pcd shell init fish | source"
+        if shell == "fish"
+        else f'eval "$(command pcd shell init {shell})"'
+    )
+    if shell == "fish":
+        commands = (
+            'pcd "new repo"; printf "hit=%s\\n" $status; pwd; '
+            'pcd missing; printf "miss=%s\\n" $status; pwd'
+        )
+    else:
+        commands = (
+            'pcd "new repo"; printf "hit=%s\\n" "$?"; pwd; '
+            'pcd missing; printf "miss=%s\\n" "$?"; pwd'
+        )
+    result = subprocess.run(
+        [executable, "-c", f"{initialize}; {commands}"],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["hit=0", str(repo), "miss=3", str(repo)]
+    assert "Project not found: missing" in result.stderr
