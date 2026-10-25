@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Self, TYPE_CHECKING
 
 from pcd_cli.cache import ProjectCache
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
     from pathlib import Path
 
-    from pcd_cli.models import Project, ProjectUsage
+    from pcd_cli.models import Project, ProjectSettings, ProjectUsage
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,8 +116,10 @@ class ProjectCatalog:
             total=len(projects),
         )
 
-    def _build_projects(self) -> list[Project]:
-        settings = self.config.load()
+    def _build_projects(self, settings: ProjectSettings | None = None) -> list[Project]:
+        if settings is None:
+            settings = self.config.load()
+
         projects = list(settings.manual_projects)
         known_paths = {project.path for project in projects}
 
@@ -129,6 +131,7 @@ class ProjectCatalog:
             projects.append(project)
 
         projects.sort(key=lambda project: (project.name.casefold(), str(project.path)))
+
         return projects
 
     def record_usage(self, project: Project) -> None:
@@ -152,14 +155,24 @@ class ProjectCatalog:
 
     def add_project(self, project: Project) -> bool:
         # An authoritative scan prevents stale cache data from hiding a repository.
-        if any(item.path == project.path for item in self._build_projects()):
+        settings = self.config.load()
+        projects = self._build_projects(settings)
+
+        if any(item.path == project.path for item in projects):
             return False
 
-        if not self.config.add_project(project):
+        committed = self.config.add_manual(project)
+        if committed is None:
             return False
 
-        # Rebuild from committed config instead of extending a potentially stale snapshot.
-        self.refresh()
+        expected = replace(settings, manual_projects=(*settings.manual_projects, project))
+        if committed != expected:
+            # Configuration changed while scanning; the old snapshot is not safe to publish.
+            self.refresh()
+        else:
+            projects.append(project)
+            projects.sort(key=lambda item: (item.name.casefold(), str(item.path)))
+            self.cache.save(projects)
 
         return True
 
@@ -197,11 +210,14 @@ class ProjectCatalog:
     ) -> Resolution:
         needle = query.casefold()
         exact_matches = [project for project in projects if project.name.casefold() == needle]
+
         if len(exact_matches) > 1:
             usage = self.history.load() if usage is None else usage
             return Resolution(rank_matches(exact_matches, query, usage), usage)
+
         if exact_matches or exact_only:
             return Resolution(exact_matches)
 
         usage = self.history.load() if usage is None else usage
+
         return Resolution(rank_matches(projects, query, usage), usage)

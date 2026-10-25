@@ -7,6 +7,7 @@ from pcd_cli.catalog import discovered, ProjectCatalog, RefreshReport
 from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
+from pcd_cli.scanner import ProjectScanner
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     import pytest
 
     from pcd_cli.cache import ProjectCacheEntry
+    from pcd_cli.models import ProjectSettings
 
 
 def test_refresh_prefers_manual_on_duplicate(projects: ProjectCatalog, tmp_path: Path) -> None:
@@ -183,10 +185,13 @@ def test_manual_add_rejects_existing_git_project(projects: ProjectCatalog, tmp_p
     repo = root / "repo"
     (repo / ".git").mkdir(parents=True)
     assert projects.config.add_root(root)
+    projects.cache.save(())
 
     manual = Project("custom", canonical_path(repo), repo, ProjectSource.MANUAL)
 
     assert projects.add_project(manual) is False
+    assert projects.config.load().manual_projects == ()
+    assert projects.cache.load() == []
 
 
 def test_manual_add_does_not_publish_conflict_check(
@@ -207,6 +212,67 @@ def test_manual_add_does_not_publish_conflict_check(
     monkeypatch.setattr(ProjectCache, "save", save)
     assert projects.add_project(project)
     assert writes == [[project]]
+
+
+def test_manual_add_scans_once_and_publishes_fresh_cache(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    assert projects.config.add_root(root)
+    projects.cache.save(())  # A stale cache cannot replace the authoritative scan.
+    manual_path = tmp_path / "manual"
+    manual_path.mkdir()
+    manual = Project("manual", canonical_path(manual_path), manual_path, ProjectSource.MANUAL)
+    scans = 0
+    original_scan = ProjectScanner.scan
+
+    def scan(scanner: ProjectScanner) -> Iterator[Project]:
+        nonlocal scans
+        scans += 1
+        yield from original_scan(scanner)
+
+    monkeypatch.setattr(ProjectScanner, "scan", scan)
+
+    assert projects.add_project(manual)
+    assert scans == 1
+    assert projects.config.load().manual_projects == (manual,)
+    assert projects.cache.load() == [manual, Project("repo", repo, repo, ProjectSource.DISCOVERED)]
+
+
+def test_manual_add_rescans_if_config_changes_during_scan(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "first"
+    first.mkdir()
+    assert projects.config.add_root(first)
+    second = tmp_path / "second"
+    repo = second / "repo"
+    (repo / ".git").mkdir(parents=True)
+    manual_path = tmp_path / "manual"
+    manual_path.mkdir()
+    manual = Project("manual", canonical_path(manual_path), manual_path, ProjectSource.MANUAL)
+    scans = 0
+    original_scan = ProjectScanner.scan
+    original_add = Config.add_manual
+
+    def scan(scanner: ProjectScanner) -> Iterator[Project]:
+        nonlocal scans
+        scans += 1
+        yield from original_scan(scanner)
+
+    def add(config: Config, project: Project) -> ProjectSettings | None:
+        assert config.add_root(second)
+        return original_add(config, project)
+
+    monkeypatch.setattr(ProjectScanner, "scan", scan)
+    monkeypatch.setattr(Config, "add_manual", add)
+
+    assert projects.add_project(manual)
+    assert scans == 2
+    assert projects.config.load().roots == (first, second)
+    assert projects.cache.load() == [manual, Project("repo", repo, repo, ProjectSource.DISCOVERED)]
 
 
 def test_manual_add_conflict_does_not_publish_cache(
@@ -397,7 +463,7 @@ def test_manual_add_handles_concurrent_config_change(
 ) -> None:
     path = tmp_path / "repo"
     project = Project("repo", canonical_path(path), path, ProjectSource.MANUAL)
-    monkeypatch.setattr(Config, "add_project", lambda _config, _project: False)
+    monkeypatch.setattr(Config, "add_manual", lambda _config, _project: None)
 
     assert projects.add_project(project) is False
 

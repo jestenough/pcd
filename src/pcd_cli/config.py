@@ -92,6 +92,10 @@ class Config:
             return True
 
     def add_project(self, project: Project) -> bool:
+        return self.add_manual(project) is not None
+
+    def add_manual(self, project: Project) -> ProjectSettings | None:
+        """Register a manual project and return the committed settings."""
         if project.source is not ProjectSource.MANUAL:
             raise ValueError("Only manual projects belong in the config")
 
@@ -99,14 +103,15 @@ class Config:
             document = self._read()
             settings = _decode_settings(document.unwrap())
             if any(item.path == project.path for item in settings.manual_projects):
-                return False
+                return None
 
             document["projects"] = [
                 {"name": item.name, "path": str(item.display_path)}
                 for item in (*settings.manual_projects, project)
             ]
             self._write(document)
-            return True
+
+            return _decode_settings(document.unwrap())
 
     def remove_project(self, path: Path) -> bool:
         target = canonical_path(path)
@@ -132,6 +137,7 @@ class Config:
             text = self.path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise InvalidConfigError(f"Config is not valid UTF-8: {self.path}") from exc
+
         try:
             return tomlkit.parse(text)
         except tomlkit.exceptions.ParseError as exc:
@@ -151,8 +157,10 @@ def _default_document() -> TOMLDocument:
     scan["hidden"] = True
     scan["follow_symlinks"] = False
     scan["exclude"] = sorted(DEFAULT_EXCLUDED_NAMES)
+
     document["scan"] = scan
     document["projects"] = tomlkit.aot()
+
     return document
 
 
@@ -180,6 +188,7 @@ def _decode_settings(value: object) -> ProjectSettings:
 
     if len({canonical_path(root) for root in roots}) != len(roots):
         raise InvalidConfigError("Config contains duplicate roots")
+
     if len({project.path for project in manual_projects}) != len(manual_projects):
         raise InvalidConfigError("Config contains duplicate manual projects")
 
@@ -198,6 +207,7 @@ def _decode_manual_project(value: object) -> Project:
     _validate_keys(project, PROJECT_KEYS, "project")
     name = _text(project.get("name"), "project name")
     display_path = _absolute_path(project.get("path"), "project path")
+
     return Project(
         name=name,
         path=canonical_path(display_path),
@@ -209,6 +219,7 @@ def _decode_manual_project(value: object) -> Project:
 def _table(value: object, message: str) -> Mapping[str, object]:
     if not _is_table(value):
         raise InvalidConfigError(message)
+
     return value
 
 
@@ -226,12 +237,14 @@ def _validate_keys(table: Mapping[str, object], allowed: frozenset[str], name: s
 def _array(value: object, name: str) -> list[object]:
     if not isinstance(value, list):
         raise InvalidConfigError(f"{name} must be an array")
+
     return value
 
 
 def _text(value: object, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise InvalidConfigError(f"{name} must be a non-empty string")
+
     return value
 
 
@@ -243,10 +256,12 @@ def _absolute_path(value: object, name: str) -> Path:
 
     if not path.is_absolute():
         raise InvalidConfigError(f"{name} must be absolute or start with ~")
+
     return path
 
 
 def _boolean(value: object, name: str) -> bool:
     if not isinstance(value, bool):
         raise InvalidConfigError(f"{name} must be a boolean")
+
     return value
