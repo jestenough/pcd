@@ -86,6 +86,8 @@ def prepare(size: int, history_size: int) -> None:
             {
                 "save_ms": elapsed * 1000,
                 "history_path": str(catalog.history.path),
+                "cache_path": str(catalog.cache.path),
+                "config_path": str(catalog.config.path),
                 "cache_bytes": sum(
                     path.stat().st_size
                     for path in catalog.cache.path.parent.glob("projects.jsonl*")
@@ -93,6 +95,45 @@ def prepare(size: int, history_size: int) -> None:
             }
         )
     )
+
+
+def prepare_tree(size: int, shape: str) -> None:
+    from pcd_cli.catalog import ProjectCatalog
+
+    root = Path.cwd() / "tree"
+    for index in range(size):
+        group = root if shape == "wide" else root / f"group-{index // 25:04d}"
+        (group / f"repo-{index:06d}" / ".git").mkdir(parents=True)
+    if size == 0:
+        root.mkdir()
+    catalog = ProjectCatalog.create()
+    if not catalog.config.add_root(root) or len(catalog.refresh()) != size:
+        raise RuntimeError("Tree fixture does not match requested size")
+    target = Path.cwd() / "add-target"
+    target.mkdir()
+    catalog.history.path.parent.mkdir(parents=True, exist_ok=True)
+    catalog.history.path.write_text("{}", encoding="utf-8")
+    print(
+        json.dumps(
+            {
+                "config_path": str(catalog.config.path),
+                "cache_path": str(catalog.cache.path),
+                "history_path": str(catalog.history.path),
+                "target": str(target),
+                "projects": size,
+            }
+        )
+    )
+
+
+def run_history(action: str) -> None:
+    from pcd_cli.catalog import ProjectCatalog
+
+    catalog = ProjectCatalog.create()
+    if action == "load":
+        print(len(catalog.history.load()))
+    else:
+        catalog.history.record(Path.cwd() / "repos" / "project-000000")
 
 
 def run_cli() -> None:
@@ -114,6 +155,10 @@ if __name__ == "__main__":
     try:
         if sys.argv[1] == "prepare":
             prepare(int(sys.argv[2]), int(sys.argv[3]))
+        elif sys.argv[1] == "prepare-tree":
+            prepare_tree(int(sys.argv[2]), sys.argv[3])
+        elif sys.argv[1] == "history":
+            run_history(sys.argv[2])
         else:
             del sys.argv[1]
             run_cli()

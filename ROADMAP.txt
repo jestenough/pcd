@@ -10,12 +10,7 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
 0.2.6 - PERFORMANCE AND SHELL COVERAGE
 --------------------------------------
 
-    1. Extend the existing benchmarks and record comparable baseline distributions.
-       Cover shell wrappers, history I/O, add operations, and large/wide directory trees
-       beyond the existing CLI startup, navigation, completion, cache, search, memory,
-       and scan benchmarks. Measure repeated exact misses that rescan configured roots.
-       Measure time separately from memory at multiple catalog sizes.
-    2. Compare end-to-end latency and memory with the baseline.
+    1. Compare end-to-end latency and memory with the baseline.
        Retain optimizations only when they improve measured behavior without regressions.
 
 
