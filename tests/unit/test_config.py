@@ -62,6 +62,18 @@ def test_add_and_remove_project(projects: ProjectCatalog, tmp_path: Path) -> Non
     assert projects.config.remove_project(project.path) is False
 
 
+def test_add_manual_returns_committed_settings(projects: ProjectCatalog, tmp_path: Path) -> None:
+    path = tmp_path / "notes"
+    project = Project("notes", canonical_path(path), path, ProjectSource.MANUAL)
+
+    committed = projects.config.add_manual(project)
+
+    assert committed == projects.config.load()
+    assert committed is not None
+    assert committed.manual_projects == (project,)
+    assert projects.config.add_manual(project) is None
+
+
 def test_rejects_discovered_project(projects: ProjectCatalog, tmp_path: Path) -> None:
     path = tmp_path / "repo"
     project = Project("repo", canonical_path(path), path, ProjectSource.DISCOVERED)

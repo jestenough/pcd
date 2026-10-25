@@ -20,14 +20,12 @@ The numbered list contains only remaining work.
        Include cache misses, empty caches, add operations, and large/wide directory trees.
        Measure broad and selective queries at multiple catalog sizes.
        Measure time separately from memory; report distributions, not only best runs.
-    2. Avoid scanning all roots twice during `pcd add`.
-       Preserve conflict detection and config/cache correctness.
-    3. Expand shell E2E coverage beyond the behavior changed in 0.2.4 and 0.2.5.
-    4. Compare end-to-end latency and memory with the baseline.
+    2. Expand shell E2E coverage beyond the behavior changed in 0.2.4 and 0.2.5.
+    3. Compare end-to-end latency and memory with the baseline.
        Retain optimizations only when they improve measured behavior without regressions.
-    5. Add a compact Added / Removed / Total summary to `pcd refresh` and test it.
+    4. Add a compact Added / Removed / Total summary to `pcd refresh` and test it.
        Add an optional detailed mode that prints added and removed paths.
-    6. When `pcd <project>` misses an exact name in the cache, discover newly added
+    5. When `pcd <project>` misses an exact name in the cache, discover newly added
        repositories and navigate to an exact match without requiring `pcd refresh`.
        Avoid scanning on exact cache hits; measure the cost of repeated misses.
 
