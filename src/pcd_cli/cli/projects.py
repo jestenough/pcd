@@ -143,12 +143,13 @@ def add(catalog: ProjectCatalog, path: Path | None, name: str | None) -> None:
 @click.pass_obj
 def remove(catalog: ProjectCatalog, query: str) -> None:
     """Remove a manual project registration."""
-    matches = catalog.search(query, exact_only=True)
+    result = catalog.resolve(query, exact_only=True)
+    matches = result.matches
     if not matches:
         click.echo(f"Project not found: {query}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
-    selected = select_project(catalog, matches, query)
+    selected = select_project(catalog, matches, query, usage=result.usage, ranked=True)
     if selected is None:
         return
 

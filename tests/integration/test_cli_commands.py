@@ -247,7 +247,7 @@ def test_remove_cancelled_selection(
         path.mkdir()
         assert runner.invoke(cli, ["add", str(path), "--name", "same"]).exit_code == 0
 
-    monkeypatch.setattr(projects_module, "select_project", lambda *_args: None)
+    monkeypatch.setattr(projects_module, "select_project", lambda *_args, **_kwargs: None)
 
     result = runner.invoke(cli, ["remove", "same"])
 
