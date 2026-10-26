@@ -1,17 +1,10 @@
 PCD ROADMAP
 ===========
 
-Current release: 0.2.5. Next release: 0.2.6.
+Current release: 0.2.6. Next release: 0.2.7.
 Work through planned releases in the order below. Within each release, follow the listed order.
-Versions after 0.2.6 are planning targets, not fixed delivery dates.
+Versions after 0.2.7 are planning targets, not fixed delivery dates.
 Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
-
-
-0.2.6 - PERFORMANCE AND SHELL COVERAGE
---------------------------------------
-
-    1. Compare end-to-end latency and memory with the baseline.
-       Retain optimizations only when they improve measured behavior without regressions.
 
 
 0.2.7 - DATA RELIABILITY
