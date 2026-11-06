@@ -44,6 +44,10 @@ PROJECT DISCOVERY
     while an older refresh is still scanning, the older refresh cannot overwrite the
     newer snapshot. The cache remains the last successfully published snapshot.
 
+    Configuration changes use read-modify-write locking, so concurrent root and manual
+    project changes are not lost. Configuration changes and cache publication may run
+    concurrently; an older scan cannot replace a newer published cache snapshot.
+
     If a filesystem error prevents a root or subdirectory from being read, the scan
     is incomplete. `pcd refresh` reports the failing path and leaves the last complete
     cache snapshot in place instead of publishing partial results. Missing roots are

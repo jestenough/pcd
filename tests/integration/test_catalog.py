@@ -295,13 +295,49 @@ def test_manual_add_does_not_publish_conflict_check(
     writes: list[list[Project]] = []
     original_save = ProjectCache.save
 
-    def save(cache: ProjectCache, items: list[Project]) -> None:
+    def save(
+        cache: ProjectCache,
+        items: list[Project],
+        *,
+        started_at_ns: int | None = None,
+    ) -> bool:
         writes.append(list(items))
-        original_save(cache, items)
+        return original_save(cache, items, started_at_ns=started_at_ns)
 
     monkeypatch.setattr(ProjectCache, "save", save)
     assert projects.add_project(project)
     assert writes == [[project]]
+
+
+def test_manual_add_refreshes_when_publication_is_rejected(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "notes"
+    path.mkdir()
+    project = Project("notes", canonical_path(path), path, ProjectSource.MANUAL)
+    original_save = ProjectCache.save
+    saves = 0
+
+    def save(
+        cache: ProjectCache,
+        items: list[Project],
+        *,
+        started_at_ns: int | None = None,
+    ) -> bool:
+        nonlocal saves
+        saves += 1
+        if saves == 1:
+            return False
+        return original_save(cache, items, started_at_ns=started_at_ns)
+
+    monkeypatch.setattr(ProjectCache, "save", save)
+
+    assert projects.add_project(project)
+    assert saves == 2
+    assert projects.config.load().manual_projects == (project,)
+    assert projects.cache.load() == [project]
 
 
 def test_manual_add_scans_once_and_publishes_fresh_cache(

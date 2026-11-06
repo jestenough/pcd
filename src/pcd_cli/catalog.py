@@ -173,6 +173,7 @@ class ProjectCatalog:
 
     def add_project(self, project: Project) -> bool:
         # An authoritative scan prevents stale cache data from hiding a repository.
+        started_at_ns = time.time_ns()
         settings = self.config.load()
         projects = self._build_projects(settings)
 
@@ -190,7 +191,9 @@ class ProjectCatalog:
         else:
             projects.append(project)
             projects.sort(key=lambda item: (item.name.casefold(), str(item.path)))
-            self.cache.save(projects)
+            if not self.cache.save(projects, started_at_ns=started_at_ns):
+                # A newer refresh may not include this manual registration yet.
+                self.refresh()
 
         return True
 

@@ -10,8 +10,7 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
 0.2.7 - DATA RELIABILITY
 ------------------------
 
-    1. Test concurrent configuration mutations and cache publication together.
-       Preserve existing config read-modify-write locking.
+    ---
 
 
 0.3.0 - PROJECT STORAGE AND RESOLUTION
