@@ -25,11 +25,9 @@ _LOCKED_BYTES = 1
 
 
 def acquire(stream: BinaryIO) -> None:
-    """Lock the first byte, creating it when the lock file is new."""
-    stream.seek(0)
-    if not stream.read(_LOCKED_BYTES):
-        stream.write(b"\0")
-        stream.flush()
+    """Lock the first byte, which may be beyond the end of an empty lock file."""
+    # Never read or write the locked range: touching a byte held by another
+    # handle raises PermissionError instead of blocking.
     stream.seek(0)
     msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, _LOCKED_BYTES)
 

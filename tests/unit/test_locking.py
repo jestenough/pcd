@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -19,6 +21,34 @@ def test_file_lock_creates_persistent_sibling(tmp_path: Path) -> None:
         assert lock_path.exists()
 
     assert lock_path.exists()
+
+
+def test_file_lock_serializes_concurrent_threads(tmp_path: Path) -> None:
+    resource = tmp_path / "resource"
+    barrier = threading.Barrier(4)
+    state_lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def worker() -> None:
+        nonlocal active, peak
+        barrier.wait(timeout=10)
+        with locking.file_lock(resource):
+            with state_lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.01)
+            with state_lock:
+                active -= 1
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert peak == 1
 
 
 def test_file_lock_releases_after_error(
