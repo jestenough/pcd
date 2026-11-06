@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import Self, TYPE_CHECKING
 
@@ -106,18 +107,26 @@ class ProjectCatalog:
 
     def refresh(self) -> list[Project]:
         """Rebuild the catalog from config and scan, then publish it to the cache."""
+        started_at_ns = time.time_ns()
         projects = self._build_projects()
-        self.cache.save(projects)
 
-        return projects
+        if self.cache.save(projects, started_at_ns=started_at_ns):
+            return projects
+
+        latest = self.cache.load()
+        return projects if latest is None else latest
 
     def refresh_with_report(self) -> RefreshReport:
         """Rescan roots, persist the new snapshot, and diff it against the cache."""
+        started_at_ns = time.time_ns()
         previous = {project.path for project in discovered(self.cache.load() or ())}
         projects = self._build_projects()
         current = {project.path for project in discovered(projects)}
 
-        self.cache.save(projects)
+        if not self.cache.save(projects, started_at_ns=started_at_ns):
+            latest = self.cache.load()
+            if latest is not None:
+                return RefreshReport(added=0, removed=0, total=len(latest))
 
         return RefreshReport(
             added=len(current - previous),

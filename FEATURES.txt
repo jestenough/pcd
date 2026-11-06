@@ -40,6 +40,10 @@ PROJECT DISCOVERY
     schema changes, older snapshots are rebuilt automatically on the next read; user
     configuration is never rewritten by that migration.
 
+    Each cache snapshot records when its refresh began. If a newer refresh publishes
+    while an older refresh is still scanning, the older refresh cannot overwrite the
+    newer snapshot. The cache remains the last successfully published snapshot.
+
     If a filesystem error prevents a root or subdirectory from being read, the scan
     is incomplete. `pcd refresh` reports the failing path and leaves the last complete
     cache snapshot in place instead of publishing partial results. Missing roots are
