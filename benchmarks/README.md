@@ -27,7 +27,9 @@ Default matrix:
   exact misses that rescan the roots, and manual add (including conflict scan);
 - one warm-up followed by seven timing samples, alternating revision order;
 - separate memory runs with Python allocation peak and process peak RSS;
-- cache publication time and disk usage during fixture setup (single observations).
+- cache publication time and disk usage during fixture setup (single observations);
+- 50 atomic replacements with and without parent-directory synchronization, reporting
+  the extra durability cost on the current platform.
 
 Timing includes process startup, imports, cache/history I/O and process exit.
 Tree fixtures include `.git` directories in either one wide root or groups of 25.

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import pcd_cli.filesystem as filesystem
 from pcd_cli.filesystem import ApplicationPaths, atomic_write, format_path
 
 
@@ -29,6 +30,74 @@ def test_atomic_cleans_temp_file_on_error(tmp_path: Path) -> None:
 
     assert not path.exists()
     assert not list(tmp_path.glob(".file.txt.*"))
+
+
+def test_atomic_write_syncs_parent_after_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "file.txt"
+    events: list[object] = []
+    replace = os.replace
+
+    def track_replace(source: str | os.PathLike[str], destination: str | os.PathLike[str]) -> None:
+        events.append("replace")
+        replace(source, destination)
+
+    def track_sync(directory: Path) -> None:
+        events.append(("sync", directory))
+
+    monkeypatch.setattr(os, "replace", track_replace)
+    monkeypatch.setattr(filesystem, "_sync_directory", track_sync)
+
+    with atomic_write(path) as stream:
+        stream.write("content")
+
+    assert events == ["replace", ("sync", tmp_path)]
+
+
+def test_sync_directory_opens_and_fsyncs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+
+    def open_directory(path: str | os.PathLike[str], options: int) -> int:
+        calls.append(("open", (path, options)))
+        return 7
+
+    def fsync(descriptor: int) -> None:
+        calls.append(("fsync", descriptor))
+
+    def close(descriptor: int) -> None:
+        calls.append(("close", descriptor))
+
+    monkeypatch.setattr(filesystem, "DIRECTORY_FSYNC_SUPPORTED", True)
+    monkeypatch.setattr(os, "open", open_directory)
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "close", close)
+
+    filesystem._sync_directory(tmp_path)
+
+    assert calls == [
+        ("open", (tmp_path, flags)),
+        ("fsync", 7),
+        ("close", 7),
+    ]
+
+
+def test_sync_directory_skips_unsupported_platform(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("unsupported platforms must not open directories")
+
+    monkeypatch.setattr(filesystem, "DIRECTORY_FSYNC_SUPPORTED", False)
+    monkeypatch.setattr(os, "open", fail)
+
+    filesystem._sync_directory(tmp_path)
 
 
 def test_short_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

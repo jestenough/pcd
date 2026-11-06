@@ -75,6 +75,21 @@ CONFIGURATION
     Set `editor = "nvim"` in the configuration to choose an editor for editing.
 
 
+DATA DURABILITY
+
+    Configuration, project cache, usage history, and managed shell files are
+    published with atomic replacement.
+
+    On Linux and macOS, the containing directory is synchronized after a successful
+    replacement so the new directory entry survives a crash as far as the filesystem
+    supports it. Windows does not support Python directory synchronization; file
+    contents are still flushed and replacement remains atomic, but the directory
+    entry is not separately synchronized.
+
+    The benchmark suite reports the extra cost of parent-directory synchronization;
+    see benchmarks/README.md.
+
+
 SHELL INTEGRATION
 
     Supported platforms: Linux, macOS, and Windows.
