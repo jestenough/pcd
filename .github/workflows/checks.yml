@@ -3,8 +3,16 @@ name: Checks
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.txt"
+      - "LICENSE"
   pull_request:
     branches: [master]
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.txt"
+      - "LICENSE"
   workflow_dispatch:
   workflow_call:
 
