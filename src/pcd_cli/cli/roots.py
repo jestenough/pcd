@@ -8,6 +8,7 @@ import click
 from pcd_cli.catalog import count_discovered_in_root
 from pcd_cli.filesystem import format_path
 from pcd_cli.models import ExitCode
+from pcd_cli.scanner import ScanError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -101,7 +102,11 @@ def roots(catalog: ProjectCatalog) -> None:
 @click.pass_obj
 def refresh(catalog: ProjectCatalog) -> None:
     """Rescan roots and report added, removed, and total projects."""
-    report = catalog.refresh_with_report()
+    try:
+        report = catalog.refresh_with_report()
+    except ScanError as exc:
+        raise click.ClickException(str(exc)) from exc
+
     click.echo(
         f"Projects refreshed:\n"
         f"  Added:   {report.added}\n"

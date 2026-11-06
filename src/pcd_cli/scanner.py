@@ -14,6 +14,16 @@ if TYPE_CHECKING:
     from pcd_cli.models import ProjectSettings
 
 
+class ScanError(OSError):
+    """A scan could not complete because filesystem paths failed."""
+
+    def __init__(self, errors: list[tuple[Path, OSError]]) -> None:
+        self.errors = tuple(errors)
+        path, error = self.errors[0]
+        suffix = f" ({len(self.errors)} filesystem errors)" if len(self.errors) > 1 else ""
+        super().__init__(f"Scan incomplete at {path}: {error}{suffix}")
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectScanner:
     settings: ProjectSettings
@@ -134,14 +144,20 @@ class ProjectScanner:
             return
 
         visited = set[tuple[int, int]]() if self.settings.follow_symlinks else None
+        errors: list[tuple[Path, OSError]] = []
+
+        def record_error(error: OSError) -> None:
+            path = Path(error.filename) if error.filename is not None else root
+            errors.append((path, error))
 
         for directory, directories, _files in os.walk(
             root,
             topdown=True,
             followlinks=self.settings.follow_symlinks,
+            onerror=record_error,
         ):
             current = Path(directory)
-            active = True if visited is None else _mark_visited(current, visited)
+            active = True if visited is None else _mark_visited(current, visited, errors)
             if not active:
                 directories.clear()
                 continue
@@ -178,11 +194,20 @@ class ProjectScanner:
             # os.walk descends only into names left in directories when topdown=True.
             directories[:] = descend_into
 
+        if errors:
+            raise ScanError(errors)
 
-def _mark_visited(path: Path, visited: set[tuple[int, int]]) -> bool:
+
+def _mark_visited(
+    path: Path,
+    visited: set[tuple[int, int]],
+    errors: list[tuple[Path, OSError]] | None = None,
+) -> bool:
     try:
         stat = path.stat()
-    except OSError:
+    except OSError as exc:
+        if errors is not None:
+            errors.append((path, exc))
         return False
 
     key = (stat.st_dev, stat.st_ino)

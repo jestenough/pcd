@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -290,6 +291,33 @@ def test_roots_and_refresh_commands(
     assert str(root) in roots.output
     assert roots.output.splitlines()[1].split()[-2:] == ["1", "available"]
     assert refreshed.output == "Projects refreshed:\n  Added:   0\n  Removed: 0\n  Total:   1\n"
+
+
+def test_refresh_reports_scan_error_without_publishing_partial_cache(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    monkeypatch.chdir(root)
+    assert runner.invoke(cli, ["init"]).exit_code == 0
+    cache = ProjectCatalog.create().cache
+    cache_before = cache.path.read_bytes()
+    real_scandir = os.scandir
+
+    def broken(path: str | os.PathLike[str]) -> object:
+        if os.fspath(path) == os.fspath(root):
+            raise PermissionError
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", broken)
+
+    result = runner.invoke(cli, ["refresh"])
+
+    assert result.exit_code == 1
+    assert "Scan incomplete" in result.output
+    assert cache.path.read_bytes() == cache_before
 
 
 def test_refresh_reports_new_discovered_projects(

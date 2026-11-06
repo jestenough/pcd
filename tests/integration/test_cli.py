@@ -14,6 +14,7 @@ from pcd_cli.cli import cli, ProjectCommandGroup
 from pcd_cli.config import InvalidConfigError
 from pcd_cli.integrations.shell import ShellIntegrationError
 from pcd_cli.models import Project, ProjectSource
+from pcd_cli.scanner import ScanError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -66,7 +67,7 @@ def test_version_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cli_module.package_version() == "0+unknown"
 
 
-def test_main_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_error_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     def config_error(*_args: object, **_kwargs: object) -> None:
         raise InvalidConfigError("bad")
 
@@ -87,6 +88,14 @@ def test_main_error_paths(monkeypatch: pytest.MonkeyPatch) -> None:
         raise ShellIntegrationError("bad")
 
     monkeypatch.setattr(cli_module.cli, "main", shell_error)
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+    assert exc.value.code == 1
+
+    def scan_error(*_args: object, **_kwargs: object) -> None:
+        raise ScanError([(tmp_path, PermissionError(13, "denied"))])
+
+    monkeypatch.setattr(cli_module.cli, "main", scan_error)
     with pytest.raises(SystemExit) as exc:
         cli_module.main()
     assert exc.value.code == 1

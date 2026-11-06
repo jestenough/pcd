@@ -13,8 +13,6 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
     1. Test concurrent configuration mutations and cache publication together.
        Preserve existing config read-modify-write locking.
     2. Prevent an older refresh from overwriting a newer cache snapshot.
-    3. Define handling of partial scans caused by filesystem errors.
-       Do not publish a partial result as an ordinary complete cache snapshot.
 
 
 0.3.0 - PROJECT STORAGE AND RESOLUTION

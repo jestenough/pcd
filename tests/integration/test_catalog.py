@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING
+
+import pytest
 
 from pcd_cli.cache import CACHE_SCHEMA_VERSION, ProjectCache
 from pcd_cli.catalog import discovered, ProjectCatalog, RefreshReport
 from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
-from pcd_cli.scanner import ProjectScanner
+from pcd_cli.scanner import ProjectScanner, ScanError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
-
-    import pytest
 
     from pcd_cli.cache import ProjectCacheEntry
     from pcd_cli.models import ProjectSettings
@@ -59,6 +60,32 @@ def test_refresh_report_compares_discovered_paths(projects: ProjectCatalog, tmp_
     (first / ".git").rmdir()
     assert projects.refresh_with_report() == RefreshReport(added=1, removed=1, total=2)
     assert {project.path for project in discovered(projects.cache.load() or ())} == {second}
+
+
+def test_refresh_does_not_publish_partial_scan(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    assert projects.config.add_root(root)
+    first = projects.refresh()
+    cache_before = projects.cache.path.read_bytes()
+    real_scandir = os.scandir
+
+    def broken(path: str | os.PathLike[str]) -> Iterator[os.DirEntry[str]]:
+        if os.fspath(path) == os.fspath(root):
+            raise PermissionError
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", broken)
+
+    with pytest.raises(ScanError):
+        projects.refresh_with_report()
+
+    assert projects.cache.path.read_bytes() == cache_before
+    assert projects.cache.load() == first
 
 
 def test_refresh_report_uses_snapshot_from_automatic_scan(

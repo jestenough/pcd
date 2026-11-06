@@ -4,14 +4,14 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
+
 from pcd_cli.filesystem import canonical_path
-from pcd_cli.models import Discovery, Project, ProjectSettings
-from pcd_cli.scanner import _mark_visited, ProjectScanner
+from pcd_cli.models import Discovery, ProjectSettings
+from pcd_cli.scanner import _mark_visited, ProjectScanner, ScanError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-    import pytest
 
     from pcd_cli.models import Project
 
@@ -204,7 +204,7 @@ def test_missing_root_is_ignored(tmp_path: Path) -> None:
     assert scan(settings(tmp_path / "missing")) == []
 
 
-def test_permission_error_is_ignored(
+def test_permission_error_raises_scan_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -219,11 +219,16 @@ def test_permission_error_is_ignored(
 
     monkeypatch.setattr(os, "scandir", broken)
 
-    assert scan(settings(root)) == []
+    with pytest.raises(ScanError, match="Scan incomplete"):
+        scan(settings(root))
 
 
 def test_disappeared_directory_is_not_marked_visited(tmp_path: Path) -> None:
-    assert _mark_visited(tmp_path / "missing", set()) is False
+    errors: list[tuple[Path, OSError]] = []
+
+    assert _mark_visited(tmp_path / "missing", set(), errors) is False
+    assert len(errors) == 1
+    assert errors[0][0] == tmp_path / "missing"
 
 
 def test_unrelated_roots_are_both_scanned(tmp_path: Path) -> None:
