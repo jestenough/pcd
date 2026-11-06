@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pcd_cli.filesystem import canonical_path
-from pcd_cli.models import Project, ProjectSource
+from pcd_cli.models import Discovery, Project, ProjectSource
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -19,14 +19,36 @@ class ProjectScanner:
     settings: ProjectSettings
 
     def scan(self) -> Iterator[Project]:
-        for root, display_path in self._scan_roots():
-            yield from self._walk(root, display_path)
+        projects: dict[Path, Project] = {}
+        roots = self._all_roots()
+        selected = self._scan_roots(roots)
 
-    def _scan_roots(self) -> list[tuple[Path, Path]]:
+        # Walk nested roots once through their selected ancestor, then project
+        # the same discovery routes onto every root below that ancestor.
+        for root, display_path in selected:
+            for project in self._walk(root, display_path):
+                discovery = Discovery(display_path, project.display_path)
+                existing = projects.get(project.path)
+                if existing is None:
+                    projects[project.path] = replace(project, discoveries=(discovery,))
+                elif discovery not in existing.discoveries:
+                    projects[project.path] = replace(
+                        existing,
+                        discoveries=(*existing.discoveries, discovery),
+                    )
+
+        self._add_nested_discoveries(projects, roots, selected)
+
+        yield from projects.values()
+
+    def _all_roots(self) -> list[tuple[Path, Path]]:
         roots = sorted(
             ((canonical_path(root), root.expanduser()) for root in self.settings.roots),
-            key=lambda item: (len(item[0].parts), str(item[0])),
+            key=lambda item: (len(item[0].parts), str(item[0]), str(item[1])),
         )
+        return list(dict.fromkeys(roots))
+
+    def _scan_roots(self, roots: list[tuple[Path, Path]]) -> list[tuple[Path, Path]]:
         selected: dict[Path, Path] = {}
 
         for root, display_path in roots:
@@ -49,6 +71,63 @@ class ProjectScanner:
             current /= part
 
         return True
+
+    def _add_nested_discoveries(
+        self,
+        projects: dict[Path, Project],
+        roots: list[tuple[Path, Path]],
+        selected: list[tuple[Path, Path]],
+    ) -> None:
+        if len(selected) == len(roots):
+            return
+
+        selected_set = set(selected)
+        selected_by_display = {display: canonical for canonical, display in selected}
+        selected_canonical = set(selected_by_display.values())
+        nested: dict[Path, list[tuple[Path, Path]]] = {}
+
+        for canonical, display in roots:
+            if (canonical, display) in selected_set:
+                continue
+
+            for ancestor in (canonical, *canonical.parents):
+                if ancestor in selected_canonical:
+                    relative = Path() if canonical == ancestor else canonical.relative_to(ancestor)
+                    nested.setdefault(ancestor, []).append((relative, display))
+                    break
+
+        if not nested:
+            return
+
+        for path, project in projects.items():
+            additions: list[Discovery] = []
+            for discovery in project.discoveries:
+                selected_ancestor = selected_by_display.get(discovery.root)
+                if selected_ancestor is None:
+                    continue
+
+                route = discovery.display_path.relative_to(discovery.root)
+                candidates = nested.get(selected_ancestor)
+                if candidates is None:
+                    continue
+
+                for root_relative, root_display in candidates:
+                    if root_relative.parts:
+                        if not route.is_relative_to(root_relative):
+                            continue
+                        nested_route = route.relative_to(root_relative)
+                    else:
+                        nested_route = route
+
+                    addition = Discovery(root_display, root_display / nested_route)
+                    if addition not in project.discoveries and addition not in additions:
+                        additions.append(addition)
+
+            if additions:
+                projects[path] = replace(
+                    project,
+                    discoveries=(*project.discoveries, *additions),
+                )
 
     def _walk(self, root: Path, display_path: Path) -> Iterator[Project]:
         if not root.is_dir():

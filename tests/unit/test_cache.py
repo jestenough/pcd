@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import pytest
 
-from pcd_cli.cache import ProjectCache
+from pcd_cli.cache import CACHE_SCHEMA_VERSION, ProjectCache
 from pcd_cli.filesystem import canonical_path
-from pcd_cli.models import Project, ProjectSource
+from pcd_cli.models import Discovery, Project, ProjectSource
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,6 +29,62 @@ def test_cache_round_trip(tmp_path: Path) -> None:
     assert cache.load() == [item]
     assert cache.find_exact("REPO") == [item]
     assert cache.find_prefix("re") == [item]
+
+
+def test_cache_round_trip_preserves_discovery_provenance(tmp_path: Path) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    item = Project(
+        "repo",
+        canonical_path(repo),
+        first_root / "linked",
+        ProjectSource.DISCOVERED,
+        discoveries=(
+            Discovery(first_root, first_root / "linked"),
+            Discovery(second_root, second_root / "repo"),
+        ),
+    )
+
+    cache.save((item,))
+
+    reloaded = ProjectCache(cache.path).load()
+    assert reloaded is not None
+    assert reloaded[0].discoveries == item.discoveries
+    assert json.loads(cache.path.read_text(encoding="utf-8").splitlines()[0]) == {
+        "version": CACHE_SCHEMA_VERSION
+    }
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        '{"name":"repo","path":"/repo","display":"/repo","source":"discovered"}\n',
+        (
+            '{"version":1}\n'
+            '{"name":"repo","path":"/repo","display":"/repo","source":"discovered",'
+            '"discoveries":[]}\n'
+        ),
+    ],
+    ids=["legacy-unversioned", "older-version"],
+)
+def test_cache_rejects_older_snapshots(tmp_path: Path, snapshot: str) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    cache.path.write_text(snapshot, encoding="utf-8")
+
+    assert cache.load() is None
+    assert cache.find_exact("repo") is None
+    assert cache.find_prefix("re") is None
+
+
+@pytest.mark.parametrize("header", ["", "[]", '{"version":"2"}', '{"version":true}'])
+def test_cache_rejects_invalid_headers(tmp_path: Path, header: str) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    cache.path.write_text(f"{header}\n", encoding="utf-8")
+
+    assert cache.load() is None
 
 
 def test_exact_at_both_ends_and_complete_miss(tmp_path: Path) -> None:
@@ -61,14 +118,27 @@ def test_cache_missing_or_corrupt(tmp_path: Path) -> None:
     [
         "not-json\n",
         "1\n",
-        '{"name":"x","path":1,"display":"/x","source":"manual"}\n',
-        '{"name":"x","path":"/x","display":1,"source":"manual"}\n',
-        '{"name":"x","path":"/x","display":"/x","source":"bad"}\n',
+        '{"name":"x","path":1,"display":"/x","source":"manual","discoveries":[]}\n',
+        '{"name":"x","path":"/x","display":1,"source":"manual","discoveries":[]}\n',
+        '{"name":"x","path":"/x","display":"/x","source":"bad","discoveries":[]}\n',
+        '{"name":"x","path":"/x","display":"/x","source":"manual"}\n',
+        '{"name":"x","path":"/x","display":"/x","source":"manual","discoveries":[1]}\n',
+        (
+            '{"name":"x","path":"/x","display":"/x","source":"discovered",'
+            '"discoveries":[{"root":1,"display":"/x"}]}\n'
+        ),
+        (
+            '{"name":"x","path":"/x","display":"/x","source":"discovered",'
+            '"discoveries":[{"root":"/root","display":1}]}\n'
+        ),
     ],
 )
 def test_cache_rejects_invalid_rows(tmp_path: Path, raw: str) -> None:
     cache = ProjectCache(tmp_path / "projects.jsonl")
-    cache.path.write_text(raw, encoding="utf-8")
+    cache.path.write_text(
+        f'{{"version":{CACHE_SCHEMA_VERSION}}}\n{raw}',
+        encoding="utf-8",
+    )
 
     assert cache.load() is None
 
@@ -76,7 +146,9 @@ def test_cache_rejects_invalid_rows(tmp_path: Path, raw: str) -> None:
 def test_cache_prefix_does_not_return_partial_data_from_corrupt_cache(tmp_path: Path) -> None:
     cache = ProjectCache(tmp_path / "projects.jsonl")
     cache.path.write_text(
-        '{"name":"repo","path":"/repo","display":"/repo","source":"manual"}\n{broken\n',
+        f'{{"version":{CACHE_SCHEMA_VERSION}}}\n'
+        '{"name":"repo","path":"/repo","display":"/repo","source":"manual","discoveries":[]}\n'
+        "{broken\n",
         encoding="utf-8",
     )
 

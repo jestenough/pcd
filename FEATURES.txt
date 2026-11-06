@@ -31,9 +31,14 @@ PROJECT DISCOVERY
 
     Projects inside registered roots are discovered automatically.
 
-    Root counts currently use canonical-path containment and exclude manual projects.
-    Overlapping-root counts are not additive. Discovery through symlinks and nested
-    scan boundaries has known counting limitations; see README.txt.
+    Root counts show how many discovered projects each root contributed, not how
+    many canonical paths happen to be contained below it. A project is counted once
+    in every root that discovered it, including overlapping roots and roots reached
+    through followed symlinks. Manual projects are not counted.
+
+    The cache records the root and display route for every discovery. When the cache
+    schema changes, older snapshots are rebuilt automatically on the next read; user
+    configuration is never rewritten by that migration.
 
 
 MANUAL PROJECTS

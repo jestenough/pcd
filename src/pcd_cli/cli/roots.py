@@ -5,8 +5,8 @@ from typing import ClassVar, Literal, NamedTuple, TYPE_CHECKING
 
 import click
 
-from pcd_cli.catalog import discovered
-from pcd_cli.filesystem import canonical_path, format_path
+from pcd_cli.catalog import count_discovered_in_root
+from pcd_cli.filesystem import format_path
 from pcd_cli.models import ExitCode
 
 if TYPE_CHECKING:
@@ -25,14 +25,9 @@ class RootListRow(NamedTuple):
 
     @classmethod
     def from_root(cls, root: Path, projects: Sequence[Project]) -> RootListRow:
-        resolved_root = canonical_path(root)
-        project_count = sum(
-            project.path.is_relative_to(resolved_root) for project in discovered(projects)
-        )
-
         return cls(
             path=format_path(root),
-            projects=str(project_count),
+            projects=str(count_discovered_in_root(root, projects)),
             status="available" if root.is_dir() else "missing",
         )
 

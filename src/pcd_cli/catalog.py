@@ -38,6 +38,15 @@ def discovered(projects: Iterable[Project]) -> Iterator[Project]:
     return (project for project in projects if project.source is ProjectSource.DISCOVERED)
 
 
+def count_discovered_in_root(root: Path, projects: Iterable[Project]) -> int:
+    """Count projects that this root discovered, once per project."""
+    resolved_root = canonical_path(root)
+    return sum(
+        any(canonical_path(discovery.root) == resolved_root for discovery in project.discoveries)
+        for project in discovered(projects)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectCatalog:
     """Coordinate project configuration, discovery, cache, and usage history."""

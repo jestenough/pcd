@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from pcd_cli.cli.roots import RootListTable
 from pcd_cli.filesystem import format_path
-from pcd_cli.models import Project, ProjectSource
+from pcd_cli.models import Discovery, Project, ProjectSource
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,8 +22,20 @@ def test_root_list_shows_project_counts_and_status(tmp_path: Path) -> None:
     repository.mkdir(parents=True)
     outside.mkdir()
     projects = (
-        Project("repository", repository, repository, ProjectSource.DISCOVERED),
-        Project("outside", outside, outside, ProjectSource.DISCOVERED),
+        Project(
+            "repository",
+            repository,
+            repository,
+            ProjectSource.DISCOVERED,
+            discoveries=(Discovery(available, repository),),
+        ),
+        Project(
+            "outside",
+            outside,
+            outside,
+            ProjectSource.DISCOVERED,
+            discoveries=(Discovery(tmp_path / "other", outside),),
+        ),
         Project("manual", available / "manual", available / "manual", ProjectSource.MANUAL),
     )
     available_path = format_path(available)
