@@ -1,16 +1,10 @@
 PCD ROADMAP
 ===========
 
-Current release: 0.2.6. Next release: 0.2.7.
+Current release: 0.2.7. Next release: 0.3.0.
 Work through planned releases in the order below. Within each release, follow the listed order.
-Versions after 0.2.7 are planning targets, not fixed delivery dates.
+Versions after 0.3.0 are planning targets, not fixed delivery dates.
 Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
-
-
-0.2.7 - DATA RELIABILITY
-------------------------
-
-    ---
 
 
 0.3.0 - PROJECT STORAGE AND RESOLUTION
