@@ -12,6 +12,8 @@ from pcd_cli.models import Discovery, Project, ProjectSource
 if TYPE_CHECKING:
     from pathlib import Path
 
+CACHE_HEADER = f'{{"version":{CACHE_SCHEMA_VERSION},"refresh_started_ns":1}}'
+
 
 def project(path: Path, name: str = "repo") -> Project:
     return Project(name, canonical_path(path), path, ProjectSource.DISCOVERED)
@@ -53,9 +55,9 @@ def test_cache_round_trip_preserves_discovery_provenance(tmp_path: Path) -> None
     reloaded = ProjectCache(cache.path).load()
     assert reloaded is not None
     assert reloaded[0].discoveries == item.discoveries
-    assert json.loads(cache.path.read_text(encoding="utf-8").splitlines()[0]) == {
-        "version": CACHE_SCHEMA_VERSION
-    }
+    header = json.loads(cache.path.read_text(encoding="utf-8").splitlines()[0])
+    assert header["version"] == CACHE_SCHEMA_VERSION
+    assert isinstance(header["refresh_started_ns"], int)
 
 
 @pytest.mark.parametrize(
@@ -79,12 +81,50 @@ def test_cache_rejects_older_snapshots(tmp_path: Path, snapshot: str) -> None:
     assert cache.find_prefix("re") is None
 
 
-@pytest.mark.parametrize("header", ["", "[]", '{"version":"2"}', '{"version":true}'])
+@pytest.mark.parametrize(
+    "header",
+    [
+        "",
+        "[]",
+        '{"version":"3"}',
+        '{"version":true}',
+        '{"version":2}',
+        f'{{"version":{CACHE_SCHEMA_VERSION}}}',
+        f'{{"version":{CACHE_SCHEMA_VERSION},"refresh_started_ns":"1"}}',
+        f'{{"version":{CACHE_SCHEMA_VERSION},"refresh_started_ns":true}}',
+        f'{{"version":{CACHE_SCHEMA_VERSION},"refresh_started_ns":-1}}',
+    ],
+)
 def test_cache_rejects_invalid_headers(tmp_path: Path, header: str) -> None:
     cache = ProjectCache(tmp_path / "projects.jsonl")
     cache.path.write_text(f"{header}\n", encoding="utf-8")
 
     assert cache.load() is None
+
+
+def test_cache_rejects_older_publication_without_overwriting_newer(tmp_path: Path) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    newer = project(tmp_path / "newer", "newer")
+    older = project(tmp_path / "older", "older")
+    assert cache.save((newer,), started_at_ns=200)
+
+    assert cache.save((older,), started_at_ns=100) is False
+    assert cache.load() == [newer]
+
+    assert cache.save((older,), started_at_ns=300) is True
+    assert cache.load() == [older]
+
+
+def test_cache_replaces_corrupt_newer_snapshot(tmp_path: Path) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    item = project(tmp_path / "repo")
+    cache.path.write_text(
+        f'{{"version":{CACHE_SCHEMA_VERSION},"refresh_started_ns":200}}\n{{broken\n',
+        encoding="utf-8",
+    )
+
+    assert cache.save((item,), started_at_ns=100) is True
+    assert cache.load() == [item]
 
 
 def test_exact_at_both_ends_and_complete_miss(tmp_path: Path) -> None:
@@ -136,7 +176,7 @@ def test_cache_missing_or_corrupt(tmp_path: Path) -> None:
 def test_cache_rejects_invalid_rows(tmp_path: Path, raw: str) -> None:
     cache = ProjectCache(tmp_path / "projects.jsonl")
     cache.path.write_text(
-        f'{{"version":{CACHE_SCHEMA_VERSION}}}\n{raw}',
+        f"{CACHE_HEADER}\n{raw}",
         encoding="utf-8",
     )
 
@@ -146,7 +186,7 @@ def test_cache_rejects_invalid_rows(tmp_path: Path, raw: str) -> None:
 def test_cache_prefix_does_not_return_partial_data_from_corrupt_cache(tmp_path: Path) -> None:
     cache = ProjectCache(tmp_path / "projects.jsonl")
     cache.path.write_text(
-        f'{{"version":{CACHE_SCHEMA_VERSION}}}\n'
+        f"{CACHE_HEADER}\n"
         '{"name":"repo","path":"/repo","display":"/repo","source":"manual","discoveries":[]}\n'
         "{broken\n",
         encoding="utf-8",

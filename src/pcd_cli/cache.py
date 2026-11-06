@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, TypeGuard
@@ -11,7 +12,7 @@ from pcd_cli.models import Discovery, Project, ProjectSource
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
 
 
 class _CacheReadError(Exception):
@@ -20,6 +21,7 @@ class _CacheReadError(Exception):
 
 class CacheHeader(TypedDict):
     version: int
+    refresh_started_ns: int
 
 
 class DiscoveryCacheEntry(TypedDict):
@@ -78,31 +80,59 @@ class ProjectCache:
         except _CacheReadError:
             return None
 
-    def save(self, projects: Iterable[Project]) -> None:
+    def save(self, projects: Iterable[Project], *, started_at_ns: int | None = None) -> bool:
         # JSONL keeps refresh streaming and avoids a second in-memory JSON tree.
-        with file_lock(self.path), atomic_write(self.path) as stream:
-            header: CacheHeader = {"version": CACHE_SCHEMA_VERSION}
-            json.dump(header, stream, separators=(",", ":"))
-            stream.write("\n")
+        refresh_started_ns = time.time_ns() if started_at_ns is None else started_at_ns
 
-            for project in projects:
-                entry: ProjectCacheEntry = {
-                    "name": project.name,
-                    "path": str(project.path),
-                    "display": str(project.display_path),
-                    "source": project.source.value,
-                    "discoveries": [
-                        {"root": str(discovery.root), "display": str(discovery.display_path)}
-                        for discovery in project.discoveries
-                    ],
+        with file_lock(self.path):
+            current = self._read_header()
+            # A newer header wins only when its snapshot is readable. Corrupt
+            # newer files must still be rebuilt instead of blocking publication.
+            if (
+                current is not None
+                and current["refresh_started_ns"] > refresh_started_ns
+                and self.load() is not None
+            ):
+                return False
+
+            with atomic_write(self.path) as stream:
+                header: CacheHeader = {
+                    "version": CACHE_SCHEMA_VERSION,
+                    "refresh_started_ns": refresh_started_ns,
                 }
-                json.dump(entry, stream, ensure_ascii=False, separators=(",", ":"))
+                json.dump(header, stream, separators=(",", ":"))
                 stream.write("\n")
+
+                for project in projects:
+                    entry: ProjectCacheEntry = {
+                        "name": project.name,
+                        "path": str(project.path),
+                        "display": str(project.display_path),
+                        "source": project.source.value,
+                        "discoveries": [
+                            {"root": str(discovery.root), "display": str(discovery.display_path)}
+                            for discovery in project.discoveries
+                        ],
+                    }
+                    json.dump(entry, stream, ensure_ascii=False, separators=(",", ":"))
+                    stream.write("\n")
+
+        return True
+
+    def _read_header(self) -> CacheHeader | None:
+        if not self.path.is_file():
+            return None
+
+        try:
+            with self.path.open(encoding="utf-8") as stream:
+                return _decode_header(_read_json(stream.readline()))
+        except (_CacheReadError, OSError, UnicodeError):
+            return None
 
     def _entries(self) -> Iterator[ProjectCacheEntry]:
         try:
             with self.path.open(encoding="utf-8") as stream:
-                _validate_header(_read_json(stream.readline()))
+                _decode_header(_read_json(stream.readline()))
                 for line in stream:
                     raw = _read_json(line)
                     if not _is_cache_entry(raw):
@@ -119,7 +149,7 @@ def _read_json(line: str) -> object:
         raise _CacheReadError("Invalid cache JSON") from exc
 
 
-def _validate_header(value: object) -> None:
+def _decode_header(value: object) -> CacheHeader:
     if not isinstance(value, dict):
         raise _CacheReadError("Invalid cache header")
 
@@ -128,6 +158,16 @@ def _validate_header(value: object) -> None:
         raise _CacheReadError("Invalid cache version")
     if version != CACHE_SCHEMA_VERSION:
         raise _CacheReadError("Unsupported cache version")
+
+    refresh_started_ns = value.get("refresh_started_ns")
+    if (
+        not isinstance(refresh_started_ns, int)
+        or isinstance(refresh_started_ns, bool)
+        or refresh_started_ns < 0
+    ):
+        raise _CacheReadError("Invalid cache refresh timestamp")
+
+    return {"version": version, "refresh_started_ns": refresh_started_ns}
 
 
 def _is_cache_entry(value: object) -> TypeGuard[ProjectCacheEntry]:

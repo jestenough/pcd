@@ -62,6 +62,43 @@ def test_refresh_report_compares_discovered_paths(projects: ProjectCatalog, tmp_
     assert {project.path for project in discovered(projects.cache.load() or ())} == {second}
 
 
+def test_refresh_does_not_publish_older_snapshot(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    newer = Project("newer", tmp_path / "newer", tmp_path / "newer", ProjectSource.MANUAL)
+    assert projects.cache.save((newer,), started_at_ns=200)
+    monkeypatch.setattr("pcd_cli.catalog.time.time_ns", lambda: 100)
+
+    assert projects.refresh() == [newer]
+    assert projects.cache.load() == [newer]
+
+
+def test_stale_refresh_returns_newer_empty_snapshot(
+    projects: ProjectCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert projects.cache.save((), started_at_ns=200)
+    monkeypatch.setattr("pcd_cli.catalog.time.time_ns", lambda: 100)
+
+    assert projects.refresh() == []
+    assert projects.cache.load() == []
+
+
+def test_refresh_report_does_not_count_stale_scan(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    newer = Project("newer", tmp_path / "newer", tmp_path / "newer", ProjectSource.MANUAL)
+    assert projects.cache.save((newer,), started_at_ns=200)
+    monkeypatch.setattr("pcd_cli.catalog.time.time_ns", lambda: 100)
+
+    assert projects.refresh_with_report() == RefreshReport(added=0, removed=0, total=1)
+    assert projects.cache.load() == [newer]
+
+
 def test_refresh_does_not_publish_partial_scan(
     projects: ProjectCatalog,
     tmp_path: Path,
@@ -132,8 +169,9 @@ def test_projects_rebuilds_legacy_cache_without_changing_config(
 
     assert [item.name for item in items] == ["repo"]
     assert projects.config.path.read_text(encoding="utf-8") == config_before
-    first_line = projects.cache.path.read_text(encoding="utf-8").splitlines()[0]
-    assert json.loads(first_line) == {"version": CACHE_SCHEMA_VERSION}
+    first_line = json.loads(projects.cache.path.read_text(encoding="utf-8").splitlines()[0])
+    assert first_line["version"] == CACHE_SCHEMA_VERSION
+    assert isinstance(first_line["refresh_started_ns"], int)
     assert ProjectCache(projects.cache.path).load() == items
 
 
