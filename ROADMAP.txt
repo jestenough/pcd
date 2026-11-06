@@ -15,8 +15,6 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
     2. Prevent an older refresh from overwriting a newer cache snapshot.
     3. Define handling of partial scans caused by filesystem errors.
        Do not publish a partial result as an ordinary complete cache snapshot.
-    4. Synchronize parent directories after atomic replacement for crash durability.
-       Verify supported platforms and measure the extra write cost.
 
 
 0.3.0 - PROJECT STORAGE AND RESOLUTION

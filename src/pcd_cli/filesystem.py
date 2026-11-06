@@ -18,6 +18,7 @@ APP_NAME = "pcd-cli"
 CONFIG_FILENAME = "config.toml"
 CACHE_FILENAME = "projects.jsonl"
 HISTORY_FILENAME = "history.json"
+DIRECTORY_FSYNC_SUPPORTED = os.name == "posix"
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,19 @@ def atomic_write(path: Path) -> Generator[TextIO]:
             os.fsync(stream.fileno())
 
         os.replace(temporary_path, path)
+        _sync_directory(path.parent)
     except BaseException:
         temporary_path.unlink(missing_ok=True)
         raise
+
+
+def _sync_directory(path: Path) -> None:
+    """Persist a directory entry after an atomic rename where supported."""
+    if not DIRECTORY_FSYNC_SUPPORTED:
+        return
+
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
