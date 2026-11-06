@@ -14,6 +14,7 @@ from pcd_cli.config import InvalidConfigError
 from pcd_cli.integrations.shell import ShellIntegrationError
 from pcd_cli.models import ExitCode
 from pcd_cli.navigation import navigate_to_project, project_completions
+from pcd_cli.scanner import ScanError
 
 if TYPE_CHECKING:
     from click.shell_completion import CompletionItem
@@ -104,6 +105,9 @@ def main() -> None:
         raise SystemExit(ExitCode.ERROR) from None
     except ShellIntegrationError as exc:
         click.echo(f"Shell integration error: {exc}", err=True)
+        raise SystemExit(ExitCode.ERROR) from None
+    except ScanError as exc:
+        click.echo(f"Scan error: {exc}", err=True)
         raise SystemExit(ExitCode.ERROR) from None
     except OSError as exc:
         click.echo(f"I/O error: {exc}", err=True)

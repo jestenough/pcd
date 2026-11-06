@@ -40,6 +40,11 @@ PROJECT DISCOVERY
     schema changes, older snapshots are rebuilt automatically on the next read; user
     configuration is never rewritten by that migration.
 
+    If a filesystem error prevents a root or subdirectory from being read, the scan
+    is incomplete. `pcd refresh` reports the failing path and leaves the last complete
+    cache snapshot in place instead of publishing partial results. Missing roots are
+    still skipped and handled as unavailable locations.
+
 
 MANUAL PROJECTS
 
