@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING
 
@@ -19,11 +19,22 @@ class ExitCode(IntEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Discovery:
+    """A root route through which a canonical project was discovered."""
+
+    root: Path
+    display_path: Path
+
+
+@dataclass(frozen=True, slots=True)
 class Project:
     name: str
     path: Path
     display_path: Path
     source: ProjectSource
+    # Provenance is metadata: the same canonical project remains one entry even
+    # when several roots or symlink routes discover it.
+    discoveries: tuple[Discovery, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
-from pcd_cli.cache import ProjectCache
+from pcd_cli.cache import CACHE_SCHEMA_VERSION, ProjectCache
 from pcd_cli.catalog import discovered, ProjectCatalog, RefreshReport
 from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
@@ -83,6 +84,30 @@ def test_projects_build_cache_when_missing(projects: ProjectCatalog, tmp_path: P
 
     assert [item.name for item in items] == ["repo"]
     assert projects.cache.load() == items
+
+
+def test_projects_rebuilds_legacy_cache_without_changing_config(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    assert projects.config.add_root(root)
+    config_before = projects.config.path.read_text(encoding="utf-8")
+    projects.cache.path.parent.mkdir(parents=True, exist_ok=True)
+    projects.cache.path.write_text(
+        '{"name":"stale","path":"/stale","display":"/stale","source":"discovered"}\n',
+        encoding="utf-8",
+    )
+
+    items = projects.projects()
+
+    assert [item.name for item in items] == ["repo"]
+    assert projects.config.path.read_text(encoding="utf-8") == config_before
+    first_line = projects.cache.path.read_text(encoding="utf-8").splitlines()[0]
+    assert json.loads(first_line) == {"version": CACHE_SCHEMA_VERSION}
+    assert ProjectCache(projects.cache.path).load() == items
 
 
 def test_projects_uses_valid_empty_cache(

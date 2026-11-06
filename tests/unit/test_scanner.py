@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pcd_cli.models import Project, ProjectSettings
+from pcd_cli.filesystem import canonical_path
+from pcd_cli.models import Discovery, Project, ProjectSettings
 from pcd_cli.scanner import _mark_visited, ProjectScanner
 
 if TYPE_CHECKING:
@@ -147,6 +148,36 @@ def test_overlapping_roots_are_not_duplicated(tmp_path: Path) -> None:
     projects = scan(settings(tmp_path, nested))
 
     assert [item.name for item in projects] == ["repo"]
+
+
+def test_overlapping_roots_walk_only_the_selected_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nested = tmp_path / "nested"
+    repo = nested / "repo"
+    (repo / ".git").mkdir(parents=True)
+    walked: list[Path] = []
+    original_walk = ProjectScanner._walk
+
+    def walk(
+        scanner: ProjectScanner,
+        root: Path,
+        display_path: Path,
+    ) -> Iterator[Project]:
+        walked.append(root)
+        yield from original_walk(scanner, root, display_path)
+
+    monkeypatch.setattr(ProjectScanner, "_walk", walk)
+
+    projects = scan(settings(tmp_path, nested))
+
+    assert walked == [canonical_path(tmp_path)]
+    assert len(projects) == 1
+    assert projects[0].discoveries == (
+        Discovery(tmp_path, tmp_path / "nested" / "repo"),
+        Discovery(nested, nested / "repo"),
+    )
 
 
 def test_nested_root_inside_repo_is_kept(tmp_path: Path) -> None:

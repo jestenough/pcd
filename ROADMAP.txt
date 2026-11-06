@@ -15,13 +15,7 @@ Release when its acceptance checks pass; do not delay it for tasks assigned to l
     2. Prevent an older refresh from overwriting a newer cache snapshot.
     3. Define handling of partial scans caused by filesystem errors.
        Do not publish a partial result as an ordinary complete cache snapshot.
-    4. Store discovery provenance and correct root project counts (deferred from 0.2.3).
-       The current cache retains one display path per canonical project, losing other routes.
-       Count a project once in every root through which it is discovered, not merely contained.
-       Version the cache schema and rebuild older snapshots without changing user configuration.
-       Add regression tests for shared symlink targets, followed symlink trees, overlapping roots,
-       and nested roots separated by exclusions or repository boundaries, including cache reloads.
-    5. Synchronize parent directories after atomic replacement for crash durability.
+    4. Synchronize parent directories after atomic replacement for crash durability.
        Verify supported platforms and measure the extra write cost.
 
 
