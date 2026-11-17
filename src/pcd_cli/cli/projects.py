@@ -7,6 +7,7 @@ from typing import assert_never, ClassVar, Literal, NamedTuple, TYPE_CHECKING
 
 import click
 
+from pcd_cli.display import terminal_text
 from pcd_cli.filesystem import canonical_path, format_path
 from pcd_cli.models import ExitCode, Project, ProjectSource
 from pcd_cli.navigation import navigate_to_project, project_completions, select_project
@@ -33,7 +34,7 @@ class ProjectListRow(NamedTuple):
     @classmethod
     def from_project(cls, project: Project) -> ProjectListRow:
         return cls(
-            name=project.name,
+            name=terminal_text(project.name),
             path=format_path(project.display_path),
             source=cls._source_label(project.source),
             status=cls._status_label(project.path),
@@ -129,10 +130,12 @@ def add(catalog: ProjectCatalog, path: Path | None, name: str | None) -> None:
         source=ProjectSource.MANUAL,
     )
     if catalog.add_project(item):
-        click.echo(f"Added project: {item.name} -> {format_path(item.display_path)}")
+        click.echo(f"Added project: {terminal_text(item.name)} -> {format_path(item.display_path)}")
         return
 
-    click.echo(f"Project already exists: {item.name} -> {format_path(item.display_path)}")
+    click.echo(
+        f"Project already exists: {terminal_text(item.name)} -> {format_path(item.display_path)}"
+    )
 
 
 @click.command()
@@ -146,7 +149,7 @@ def remove(catalog: ProjectCatalog, query: str) -> None:
     result = catalog.resolve(query, exact_only=True)
     matches = result.matches
     if not matches:
-        click.echo(f"Project not found: {query}", err=True)
+        click.echo(f"Project not found: {terminal_text(query)}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
     selected = select_project(catalog, matches, query, usage=result.usage, ranked=True)
@@ -155,13 +158,13 @@ def remove(catalog: ProjectCatalog, query: str) -> None:
 
     if selected.source is ProjectSource.DISCOVERED:
         click.echo(
-            f"{selected.name} is discovered automatically and cannot be removed with pcd remove.",
+            f"{terminal_text(selected.name)} is discovered automatically and cannot be removed with pcd remove.",
             err=True,
         )
         raise click.exceptions.Exit(ExitCode.ERROR)
 
     if catalog.remove_project(selected.path):
-        click.echo(f"Removed project: {selected.name}")
+        click.echo(f"Removed project: {terminal_text(selected.name)}")
         return
 
     click.echo("Project is no longer registered.", err=True)

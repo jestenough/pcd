@@ -353,3 +353,12 @@ def test_completion_deduplicates_names(tmp_path: Path) -> None:
     )
 
     assert [item.value for item in navigation_module.project_completions("sa")] == ["same"]
+
+
+def test_completion_omits_names_with_terminal_or_protocol_controls(tmp_path: Path) -> None:
+    names = ("safe", "unsafe\nplain,spoof", "unsafe\x1b]52;c;payload\x07")
+    ProjectCatalog.create().cache.save(
+        Project(name, tmp_path / str(index), tmp_path / str(index), ProjectSource.MANUAL)
+        for index, name in enumerate(names)
+    )
+    assert [item.value for item in navigation_module.project_completions("")] == ["safe"]

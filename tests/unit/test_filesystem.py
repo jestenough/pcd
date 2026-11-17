@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from pathlib import Path
+from typing import TextIO
 
 import pytest
 
@@ -30,6 +32,32 @@ def test_atomic_cleans_temp_file_on_error(tmp_path: Path) -> None:
 
     assert not path.exists()
     assert not list(tmp_path.glob(".file.txt.*"))
+
+
+def test_atomic_closes_descriptor_if_stream_cannot_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "file.txt"
+    descriptor: int | None = None
+
+    def fail_open(fd: int, mode: str, *, encoding: str) -> TextIO:
+        nonlocal descriptor
+        descriptor = fd
+        raise OSError("cannot open stream")
+
+    monkeypatch.setattr(os, "fdopen", fail_open)
+    try:
+        with pytest.raises(OSError, match="cannot open stream"), atomic_write(path):
+            pytest.fail("the stream must not be yielded")
+        assert descriptor is not None
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+        assert not list(tmp_path.glob(".file.txt.*"))
+    finally:
+        # Close the leaked descriptor even when running this regression against old code.
+        if descriptor is not None:
+            with suppress(OSError):
+                os.close(descriptor)
 
 
 def test_atomic_write_syncs_parent_after_replacement(

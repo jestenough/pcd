@@ -200,3 +200,24 @@ def test_cache_ignores_invalid_utf8(tmp_path: Path) -> None:
     cache.path.write_bytes(b"\xff")
 
     assert cache.load() is None
+
+
+@pytest.mark.parametrize("bad_json", ["[" * 2000 + "]" * 2000, "1" * 5000])
+def test_cache_recovers_from_json_decoder_limits(tmp_path: Path, bad_json: str) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    cache.path.write_text(f"{CACHE_HEADER}\n{bad_json}\n", encoding="utf-8")
+    assert cache.load() is None
+    assert cache.find_exact("repo") is None
+    assert cache.find_prefix("re") is None
+
+
+def test_lookup_rejects_invalid_source_in_unmatched_row(tmp_path: Path) -> None:
+    cache = ProjectCache(tmp_path / "projects.jsonl")
+    cache.save([project(tmp_path / "repo")])
+    with cache.path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            '{"name":"other","path":"/other","display":"/other",'
+            '"source":"invalid","discoveries":[]}\n'
+        )
+    assert cache.find_exact("repo") is None
+    assert cache.find_prefix("re") is None

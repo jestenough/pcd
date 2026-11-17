@@ -36,4 +36,7 @@ See the `benchmark guide <../benchmarks/README.md>`_ for CLI comparisons and
 measurement limits. Built distributions are in ``./dist``; install the wheel
 with your Python package manager.
 
+The `performance and safety audit <performance.rst>`_ records the measured
+bottlenecks, fixes and local verification limits.
+
 See also: the `roadmap <../ROADMAP.txt>`_ and the `README <../README.txt>`_.

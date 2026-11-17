@@ -165,3 +165,13 @@ def test_render_empty_results() -> None:
     picker = ProjectPicker((), {})
 
     assert "No matching projects" in picker._render()[0][1]
+
+
+def test_render_escapes_terminal_controls() -> None:
+    item = project("unsafe\x1b]52;c;payload\x07\r\n")
+    picker = ProjectPicker((item,), {})
+    picker.matches = [item]
+    output = "".join(fragment[1] for fragment in picker._render())
+    assert "\x1b" not in output
+    assert "\x07" not in output
+    assert r"unsafe\x1b]52;c;payload\x07\r\n" in output

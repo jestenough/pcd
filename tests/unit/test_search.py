@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from pcd_cli.models import Project, ProjectSource, ProjectUsage
-from pcd_cli.search import rank_matches, rank_recent
+from pcd_cli.search import _score, rank_matches, rank_recent
 
 
 def project(name: str) -> Project:
@@ -32,6 +34,28 @@ def test_fuzzy_subsequence() -> None:
 
 def test_fuzzy_miss() -> None:
     assert rank_matches((project("medcab"),), "xyz") == []
+
+
+@pytest.mark.parametrize(
+    "query,name,score",
+    [
+        ("ab", "a-b", (3, 17)),
+        ("ab", "a__b", (3, 15)),
+        ("ab", "axxab", (2, 17)),
+        ("aa", "a-a", (3, 17)),
+        ("abc", "a-x-ab-c", (3, 15)),
+        ("aaa", "a-a", None),
+    ],
+)
+def test_fuzzy_scoring_keeps_boundaries_gaps_and_greedy_order(
+    query: str, name: str, score: tuple[int, int] | None
+) -> None:
+    assert _score(query, name) == score
+
+
+def test_search_casefolds_unicode() -> None:
+    item = project("Straße")
+    assert rank_matches((item,), "STRASSE") == [item]
 
 
 def test_history_breaks_equal_text_score() -> None:

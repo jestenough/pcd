@@ -6,6 +6,7 @@ import click
 from click.shell_completion import CompletionItem
 
 from pcd_cli.catalog import ProjectCatalog
+from pcd_cli.display import terminal_text
 from pcd_cli.filesystem import format_path
 from pcd_cli.integrations.shell import (
     inactive_shell_message,
@@ -29,7 +30,7 @@ def navigate_to_project(
     result = None if query is None else catalog.resolve(query, exact_only=exact_only)
     matches = catalog.projects() if result is None else result.matches
     if not matches:
-        suffix = "" if query is None else f": {query}"
+        suffix = "" if query is None else f": {terminal_text(query)}"
         click.echo(f"Project not found{suffix}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
@@ -71,7 +72,7 @@ def project_completions(value: str) -> list[CompletionItem]:
     completions: list[CompletionItem] = []
 
     for project in ProjectCatalog.create().completion_candidates(value):
-        if project.name in names:
+        if project.name in names or terminal_text(project.name) != project.name:
             continue
         names.add(project.name)
         completions.append(CompletionItem(project.name, help=format_path(project.display_path)))
@@ -100,5 +101,5 @@ def _open_project(catalog: ProjectCatalog, project: Project) -> None:
         click.echo(project.path)
         raise click.exceptions.Exit(SHELL_CD_EXIT_CODE)
 
-    click.echo(project.path)
+    click.echo(terminal_text(str(project.path)))
     click.echo(inactive_shell_message(), err=True)

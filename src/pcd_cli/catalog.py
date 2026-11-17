@@ -39,13 +39,19 @@ def discovered(projects: Iterable[Project]) -> Iterator[Project]:
     return (project for project in projects if project.source is ProjectSource.DISCOVERED)
 
 
-def count_discovered_in_root(root: Path, projects: Iterable[Project]) -> int:
-    """Count projects that this root discovered, once per project."""
-    resolved_root = canonical_path(root)
-    return sum(
-        any(canonical_path(discovery.root) == resolved_root for discovery in project.discoveries)
-        for project in discovered(projects)
-    )
+def count_discovered_by_root(projects: Iterable[Project]) -> dict[Path, int]:
+    """Count each project once per canonical root in a single pass."""
+    resolved: dict[Path, Path] = {}
+    counts: dict[Path, int] = {}
+    for project in discovered(projects):
+        roots: set[Path] = set()
+        for discovery in project.discoveries:
+            if discovery.root not in resolved:
+                resolved[discovery.root] = canonical_path(discovery.root)
+            roots.add(resolved[discovery.root])
+        for root in roots:
+            counts[root] = counts.get(root, 0) + 1
+    return counts
 
 
 @dataclass(frozen=True, slots=True)

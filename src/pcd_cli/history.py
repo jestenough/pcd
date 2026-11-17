@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,7 +32,7 @@ class UsageHistory:
         try:
             with self.path.open(encoding="utf-8") as stream:
                 raw: object = json.load(stream)
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except (OSError, ValueError, RecursionError):
             return {}
 
         return _decode_usage(raw)
@@ -49,7 +50,7 @@ class UsageHistory:
                 for project_path, item in retained.items()
             }
             with atomic_write(self.path) as stream:
-                json.dump(payload, stream, ensure_ascii=False, separators=(",", ":"))
+                stream.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
                 stream.write("\n")
 
 
@@ -75,7 +76,12 @@ def _is_usage_entry(value: object) -> TypeGuard[UsageHistoryEntry]:
 
     used_at = value.get("used_at")
     count = value.get("count")
-    valid_time = not isinstance(used_at, bool) and isinstance(used_at, int | float)
+    if isinstance(used_at, bool) or not isinstance(used_at, int | float):
+        return False
+    try:
+        valid_time = math.isfinite(used_at)
+    except OverflowError:
+        return False
     valid_count = not isinstance(count, bool) and isinstance(count, int) and count > 0
     return valid_time and valid_count
 

@@ -28,7 +28,8 @@ def rank_matches(
     matches: list[tuple[ProjectRank, Project]] = []
 
     for project in projects:
-        score = _score(needle, project.name.casefold())
+        name = project.name.casefold()
+        score = _score(needle, name)
         if score is None:
             continue
 
@@ -42,7 +43,7 @@ def rank_matches(
             -used_at,
             -count,
             len(project.name),
-            project.name.casefold(),
+            name,
             str(project.path),
         )
         matches.append((rank, project))
@@ -80,15 +81,14 @@ def _score(query: str, name: str) -> tuple[int, int] | None:
     if position >= 0:
         return 2, len(query) * SUBSTRING_WEIGHT - position
 
-    query_index = 0
     previous = -2
     points = 0
+    start = 0
 
-    for index, char in enumerate(name):
-        if query_index == len(query):
-            break
-        if char != query[query_index]:
-            continue
+    for char in query:
+        index = name.find(char, start)
+        if index < 0:
+            return None
 
         points += MATCH_POINTS
         points += BOUNDARY_BONUS if index == 0 or name[index - 1] in "-_./ " else 0
@@ -101,10 +101,7 @@ def _score(query: str, name: str) -> tuple[int, int] | None:
             )
 
         previous = index
-        query_index += 1
-
-    if query_index != len(query):
-        return None
+        start = index + 1
 
     penalty = max(len(name) - len(query), 0) // 2
     return 3, points - penalty

@@ -35,6 +35,9 @@ def test_history_corruption_is_ignored(tmp_path: Path) -> None:
         {"/x": {"used_at": True, "count": 1}},
         {"/x": {"used_at": 1, "count": 0}},
         {"/x": {"used_at": "x", "count": 1}},
+        {"/x": {"used_at": float("nan"), "count": 1}},
+        {"/x": {"used_at": float("inf"), "count": 1}},
+        {"/x": {"used_at": 10**400, "count": 1}},
     ],
 )
 def test_history_rejects_invalid_rows(tmp_path: Path, payload: object) -> None:
@@ -42,6 +45,14 @@ def test_history_rejects_invalid_rows(tmp_path: Path, payload: object) -> None:
     history.path.write_text(json.dumps(payload), encoding="utf-8")
 
     assert history.load() == {}
+
+
+@pytest.mark.parametrize("payload", ["[" * 2000 + "]" * 2000, "1" * 5000])
+def test_history_recovers_from_json_decoder_limits(tmp_path: Path, payload: str) -> None:
+    history = UsageHistory(tmp_path / "history.json")
+    history.path.write_text(payload, encoding="utf-8")
+    history.record(tmp_path / "repo")
+    assert history.load()[tmp_path / "repo"].count == 1
 
 
 def test_history_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

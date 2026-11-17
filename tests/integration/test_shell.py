@@ -933,8 +933,12 @@ def test_pwsh_profile_and_reload_command() -> None:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows CMD behavior test")
-def test_cmd_wrapper_changes_directory(tmp_path: Path) -> None:
-    target = tmp_path / "target"
+@pytest.mark.parametrize("delayed_expansion", ["off", "on"])
+@pytest.mark.parametrize("target_name", ["target", "target!PCD_SHELL! & (literal%name%) ^caret"])
+def test_cmd_wrapper_changes_directory(
+    tmp_path: Path, delayed_expansion: str, target_name: str
+) -> None:
+    target = tmp_path / target_name
     target.mkdir()
     executable = tmp_path / "pcd-stub.cmd"
     executable.write_text(
@@ -946,7 +950,8 @@ echo ordinary-output
 exit /b 0
 
 :jump
-echo %PCD_TEST_TARGET%
+setlocal EnableDelayedExpansion
+echo(!PCD_TEST_TARGET!
 exit /b 10
 
 :config
@@ -964,7 +969,9 @@ exit /b 3
     script.write_text(
         f"""@echo off
 call "{wrapper}" jump
-echo cwd=%CD%
+setlocal EnableDelayedExpansion
+echo cwd=!CD!
+endlocal
 call "{wrapper}" config edit
 call "{wrapper}" marker
 call "{wrapper}" fail
@@ -980,7 +987,7 @@ echo wrapper=%PCD_WRAPPER%
     environment.pop("PCD_WRAPPER", None)
 
     result = subprocess.run(
-        ["cmd.exe", "/d", "/c", str(script)],
+        ["cmd.exe", "/d", f"/v:{delayed_expansion}", "/c", str(script)],
         check=False,
         capture_output=True,
         text=True,

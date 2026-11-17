@@ -95,7 +95,7 @@ class ProjectScanner:
         selected_set = set(selected)
         selected_by_display = {display: canonical for canonical, display in selected}
         selected_canonical = set(selected_by_display.values())
-        nested: dict[Path, list[tuple[Path, Path]]] = {}
+        nested: dict[Path, dict[Path, list[Path]]] = {}
 
         for canonical, display in roots:
             if (canonical, display) in selected_set:
@@ -104,7 +104,7 @@ class ProjectScanner:
             for ancestor in (canonical, *canonical.parents):
                 if ancestor in selected_canonical:
                     relative = Path() if canonical == ancestor else canonical.relative_to(ancestor)
-                    nested.setdefault(ancestor, []).append((relative, display))
+                    nested.setdefault(ancestor, {}).setdefault(relative, []).append(display)
                     break
 
         if not nested:
@@ -112,6 +112,7 @@ class ProjectScanner:
 
         for path, project in projects.items():
             additions: list[Discovery] = []
+            seen = set(project.discoveries)
             for discovery in project.discoveries:
                 selected_ancestor = selected_by_display.get(discovery.root)
                 if selected_ancestor is None:
@@ -122,17 +123,15 @@ class ProjectScanner:
                 if candidates is None:
                     continue
 
-                for root_relative, root_display in candidates:
-                    if root_relative.parts:
-                        if not route.is_relative_to(root_relative):
-                            continue
+                # Probe only ancestors of this route, rather than every nested root.
+                # Shallow-to-deep traversal retains the sorted roots' discovery order.
+                for root_relative in (*reversed(route.parents), route):
+                    for root_display in candidates.get(root_relative, ()):
                         nested_route = route.relative_to(root_relative)
-                    else:
-                        nested_route = route
-
-                    addition = Discovery(root_display, root_display / nested_route)
-                    if addition not in project.discoveries and addition not in additions:
-                        additions.append(addition)
+                        addition = Discovery(root_display, root_display / nested_route)
+                        if addition not in seen:
+                            seen.add(addition)
+                            additions.append(addition)
 
             if additions:
                 projects[path] = replace(
@@ -178,10 +177,9 @@ class ProjectScanner:
                 child = current / name
                 blocked = name == ".git" or name in self.settings.excluded_names
                 hidden = not self.settings.include_hidden and name.startswith(".")
-                linked = not self.settings.follow_symlinks and child.is_symlink()
-
                 if blocked or hidden:
                     continue
+                linked = not self.settings.follow_symlinks and child.is_symlink()
                 if linked:
                     if _is_git_repository(child):
                         yield Project(

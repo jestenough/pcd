@@ -58,6 +58,11 @@ result set; it does not search the entire catalog again.
 Filter ``pcd list`` with ``--manual``, ``--discovered``, or ``--missing``.
 Use ``pcd list --json`` for machine-readable output.
 
+Tables, picker results and project messages display terminal control characters
+as visible escapes, such as ``\x1b`` and ``\n``. Stored names and JSON values retain
+their original contents. Names containing these controls are omitted from shell
+completion because completion uses a line-based protocol.
+
 Without active `shell integration <shells.rst>`_, pcd prints the destination and
 a setup hint; it cannot change the parent shell's directory.
 

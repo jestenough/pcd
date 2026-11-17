@@ -1,5 +1,29 @@
 # CLI performance comparison
 
+## Core profiling
+
+To locate expensive functions before changing algorithms, run:
+
+```sh
+poetry run python benchmarks/profile_code.py --output benchmarks/baselines/profile.json
+```
+
+The profiler covers root counts, nested discovery projection, cache reads/writes,
+exact/prefix lookup, broad/fuzzy/missing searches, history, config and filesystem
+scanning. It uses temporary fixtures, with 1,000 synthetic projects, eight nested
+roots and up to 250 real repositories by default. `--size`, `--roots` and `--repeats`
+adjust the workload; `--source <checkout>` selects another revision's source tree.
+Use `--operations roots nested_discoveries` to focus on individual operations.
+
+Each operation has a warm-up, uninstrumented timing samples, a separate cProfile
+run (top cumulative functions), and a separate tracemalloc peak. JSON records the
+source hash, interpreter and platform. These are component timings, excluding
+process startup and fixture creation. Run comparisons without other tests or
+benchmarks running concurrently. Use the CLI comparison below for startup and
+end-to-end behavior; the profiler does not measure interactive terminal latency.
+
+## End-to-end comparison
+
 Run from the checkout with project dependencies installed:
 
 ```sh

@@ -5,8 +5,8 @@ from typing import ClassVar, Literal, NamedTuple, TYPE_CHECKING
 
 import click
 
-from pcd_cli.catalog import count_discovered_in_root
-from pcd_cli.filesystem import format_path
+from pcd_cli.catalog import count_discovered_by_root
+from pcd_cli.filesystem import canonical_path, format_path
 from pcd_cli.models import ExitCode
 from pcd_cli.scanner import ScanError
 
@@ -25,10 +25,10 @@ class RootListRow(NamedTuple):
     status: RootStatusLabel
 
     @classmethod
-    def from_root(cls, root: Path, projects: Sequence[Project]) -> RootListRow:
+    def from_root(cls, root: Path, count: int) -> RootListRow:
         return cls(
             path=format_path(root),
-            projects=str(count_discovered_in_root(root, projects)),
+            projects=str(count),
             status="available" if root.is_dir() else "missing",
         )
 
@@ -39,7 +39,10 @@ class RootListTable:
     _rows: tuple[RootListRow, ...]
 
     def __init__(self, roots: Sequence[Path], projects: Sequence[Project]) -> None:
-        self._rows = tuple(RootListRow.from_root(root, projects) for root in roots)
+        counts = count_discovered_by_root(projects)
+        self._rows = tuple(
+            RootListRow.from_root(root, counts.get(canonical_path(root), 0)) for root in roots
+        )
 
     def render(self) -> str:
         if not self._rows:

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pcd_cli.catalog as catalog_module
 from pcd_cli.cli.roots import RootListTable
-from pcd_cli.filesystem import format_path
+from pcd_cli.filesystem import canonical_path, format_path
 from pcd_cli.models import Discovery, Project, ProjectSource
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import pytest
 
 
 def test_empty_root_list() -> None:
@@ -50,3 +53,31 @@ def test_root_list_shows_project_counts_and_status(tmp_path: Path) -> None:
     )
 
     assert RootListTable((available, missing), projects).render() == expected
+
+
+def test_root_counts_resolve_each_discovery_root_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    roots = [tmp_path / f"root-{index}" for index in range(8)]
+    projects = [
+        Project(
+            str(index),
+            root / str(index),
+            root / str(index),
+            ProjectSource.DISCOVERED,
+            # Several routes under one root must still count as one project.
+            (Discovery(root, root / str(index)), Discovery(root, root / "alias")),
+        )
+        for index in range(50)
+        for root in roots
+    ]
+    resolved: list[Path] = []
+
+    def resolve(path: Path) -> Path:
+        resolved.append(path)
+        return canonical_path(path)
+
+    monkeypatch.setattr(catalog_module, "canonical_path", resolve)
+    counts = catalog_module.count_discovered_by_root(iter(projects))
+    assert counts == {canonical_path(root): 50 for root in roots}
+    assert resolved == roots

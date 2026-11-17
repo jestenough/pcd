@@ -9,6 +9,7 @@ from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Project, ProjectSource
 
 if TYPE_CHECKING:
+    import os
     from pathlib import Path
 
     from pcd_cli.catalog import ProjectCatalog
@@ -205,3 +206,38 @@ def test_unknown_config_keys_are_rejected(projects: ProjectCatalog, text: str, k
 
     with pytest.raises(InvalidConfigError, match=key):
         projects.config.load()
+
+
+@pytest.mark.parametrize("operation", ["load", "add", "ensure"])
+def test_unreadable_config_is_not_treated_as_missing(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    from pathlib import Path
+
+    projects.config.path.parent.mkdir(parents=True)
+    original = "roots = []\n# preserve this file\n"
+    projects.config.path.write_text(original, encoding="utf-8")
+    stat = Path.stat
+    read_text = Path.read_text
+
+    def denied_stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if path == projects.config.path:
+            raise PermissionError("config access denied")
+        return stat(path, follow_symlinks=follow_symlinks)
+
+    def denied_read(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        if path == projects.config.path:
+            raise PermissionError("config access denied")
+        return read_text(path, encoding=encoding, errors=errors)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "stat", denied_stat)
+        patch.setattr(Path, "read_text", denied_read)
+        with pytest.raises(PermissionError, match="config access denied"):
+            if operation == "load":
+                projects.config.load()
+            elif operation == "add":
+                projects.config.add_root(tmp_path / "new")
+            else:
+                projects.config.ensure_exists()
+    assert projects.config.path.read_text(encoding="utf-8") == original

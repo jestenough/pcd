@@ -12,6 +12,7 @@ from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.processors import BeforeInput
 
+from pcd_cli.display import terminal_text
 from pcd_cli.filesystem import format_path
 from pcd_cli.search import rank_matches, rank_recent
 from pcd_cli.terminal import terminal_output
@@ -140,7 +141,10 @@ class ProjectPicker:
             marker = "> " if selected else "  "
             style = "reverse" if selected else ""
             lines.append(
-                (style, f"{marker}{project.name:<24} {format_path(project.display_path)}\n")
+                (
+                    style,
+                    f"{marker}{terminal_text(project.name):<24} {format_path(project.display_path)}\n",
+                )
             )
 
         if len(self.matches) > PAGE_SIZE:

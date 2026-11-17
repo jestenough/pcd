@@ -51,6 +51,21 @@ def test_manual_add_list_remove(runner: CliRunner, tmp_path: Path) -> None:
     assert ProjectCatalog.create().config.load().manual_projects == ()
 
 
+def test_terminal_controls_in_project_names_are_escaped(runner: CliRunner, tmp_path: Path) -> None:
+    name = "repo\x1b]52;c;payload\x07\nspoof\u202e"
+    added = runner.invoke(cli, ["add", str(tmp_path), "--name", name], color=True)
+    listed = runner.invoke(cli, ["list"], color=True)
+    machine = runner.invoke(cli, ["list", "--json"])
+    removed = runner.invoke(cli, ["remove", name], color=True)
+    for result in (added, listed, removed):
+        assert result.exit_code == 0
+        assert "\x1b" not in result.stdout
+        assert "\x07" not in result.stdout
+        assert "\u202e" not in result.stdout
+        assert r"repo\x1b]52;c;payload\x07\nspoof\u202e" in result.stdout
+    assert json.loads(machine.stdout)[0]["name"] == name
+
+
 @pytest.mark.parametrize("as_json", [False, True])
 @pytest.mark.parametrize(
     ("filters", "expected_indices"),

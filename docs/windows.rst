@@ -106,4 +106,12 @@ See Microsoft's `App Control troubleshooting guide
 and `Smart App Control FAQ
 <https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions>`_.
 
+CMD paths with exclamation marks
+-------------------------------
+
+The CMD wrapper preserves literal ``!`` and ``^`` characters in destination paths,
+including sessions started with ``cmd /v:on`` (delayed expansion). After upgrading,
+run ``pcd shell install cmd`` to update an existing managed wrapper. Manual wrappers
+must be updated from ``pcd shell init cmd``.
+
 See also: `other startup problems <troubleshooting.rst>`_ and the `README <../README.txt>`_.

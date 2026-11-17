@@ -9,6 +9,7 @@ from typing import Self, TextIO, TYPE_CHECKING
 
 from platformdirs import PlatformDirs
 
+from pcd_cli.display import terminal_text
 from pcd_cli.locking import file_lock as file_lock
 
 if TYPE_CHECKING:
@@ -44,10 +45,10 @@ def canonical_path(path: Path) -> Path:
 def format_path(path: Path) -> str:
     home = Path.home()
     if not path.is_relative_to(home):
-        return str(path)
+        return terminal_text(str(path))
 
     relative = path.relative_to(home)
-    return "~" if not relative.parts else f"~/{relative}"
+    return "~" if not relative.parts else terminal_text(f"~/{relative}")
 
 
 @contextmanager
@@ -58,7 +59,12 @@ def atomic_write(path: Path) -> Generator[TextIO]:
     temporary_path = Path(temporary_name)
 
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        try:
+            stream = os.fdopen(descriptor, "w", encoding="utf-8")
+        except BaseException:
+            os.close(descriptor)
+            raise
+        with stream:
             yield stream
             stream.flush()
             os.fsync(stream.fileno())

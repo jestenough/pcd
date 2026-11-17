@@ -7,13 +7,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pcd_cli.filesystem import canonical_path
-from pcd_cli.models import Discovery, ProjectSettings
+from pcd_cli.models import Discovery, Project, ProjectSettings, ProjectSource
 from pcd_cli.scanner import _mark_visited, ProjectScanner, ScanError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-    from pcd_cli.models import Project
 
 
 EXCLUDE = frozenset(
@@ -177,6 +175,49 @@ def test_overlapping_roots_walk_only_the_selected_parent(
     assert projects[0].discoveries == (
         Discovery(tmp_path, tmp_path / "nested" / "repo"),
         Discovery(nested, nested / "repo"),
+    )
+
+
+def test_nested_discovery_index_preserves_order_and_ignores_unrelated_roots(tmp_path: Path) -> None:
+    nested = tmp_path / "nested"
+    deeper = nested / "packages"
+    repo = deeper / "repo"
+    (repo / ".git").mkdir(parents=True)
+    unrelated = [tmp_path / f"other-{index}" for index in range(40)]
+    found = scan(settings(deeper, *unrelated, repo, tmp_path, nested))
+    assert len(found) == 1
+    assert found[0].discoveries == (
+        Discovery(tmp_path, repo),
+        Discovery(nested, repo),
+        Discovery(deeper, repo),
+        Discovery(repo, repo),
+    )
+
+
+def test_nested_discovery_index_preserves_alias_routes(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    first = tmp_path / "first-alias"
+    second = tmp_path / "second-alias"
+    path = root / "nested" / "repo"
+    shown = second / "nested" / "repo"
+    item = Project("repo", path, shown, ProjectSource.DISCOVERED, (Discovery(second, shown),))
+    projects = {path: item}
+    scanner = ProjectScanner(settings(root))
+    scanner._add_nested_discoveries(
+        projects,
+        [
+            (root, first),
+            (root, second),
+            (root / "nested", first / "nested"),
+            (root / "nested", second / "nested"),
+        ],
+        [(root, second)],
+    )
+    assert projects[path].discoveries == (
+        Discovery(second, shown),
+        Discovery(first, first / "nested" / "repo"),
+        Discovery(first / "nested", first / "nested" / "repo"),
+        Discovery(second / "nested", shown),
     )
 
 

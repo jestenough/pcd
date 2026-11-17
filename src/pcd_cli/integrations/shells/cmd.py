@@ -26,6 +26,9 @@ class CmdDriver(ShellDriver):
         @echo off
         rem Managed by pcd. Changes will be overwritten.
         setlocal
+        set "pcd_delayed_expansion="
+        if "!"=="" set "pcd_delayed_expansion=1"
+        setlocal DisableDelayedExpansion
         set "{SHELL_WRAPPER_ENV}=cmd"
         if not defined _PCD_EXECUTABLE set "_PCD_EXECUTABLE=pcd.exe"
 
@@ -38,12 +41,16 @@ class CmdDriver(ShellDriver):
         if "%pcd_code%"=="{SHELL_CD_EXIT_CODE}" goto pcd_change_directory
         type "%pcd_output%"
         del /q "%pcd_output%"
-        endlocal & exit /b %pcd_code%
+        endlocal & endlocal & exit /b %pcd_code%
 
         :pcd_change_directory
+        set "pcd_destination="
         set /p "pcd_destination=" < "%pcd_output%"
         del /q "%pcd_output%"
-        endlocal & cd /d "%pcd_destination%"
+        rem Preserve literal carets and exclamation marks after restoring the caller's mode.
+        if defined pcd_delayed_expansion set "pcd_destination=%pcd_destination:^=^^%"
+        if defined pcd_delayed_expansion set "pcd_destination=%pcd_destination:!=^!%"
+        endlocal & endlocal & cd /d "%pcd_destination%"
         exit /b %ERRORLEVEL%
 
         :pcd_direct

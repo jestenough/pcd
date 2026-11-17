@@ -60,7 +60,9 @@ class Config:
 
     def ensure_exists(self) -> None:
         with file_lock(self.path):
-            if not self.path.exists():
+            try:
+                self.path.stat()
+            except FileNotFoundError:
                 self._write(_default_document())
 
     def add_root(self, root: Path) -> bool:
@@ -130,11 +132,10 @@ class Config:
             return True
 
     def _read(self) -> TOMLDocument:
-        if not self.path.is_file():
-            return _default_document()
-
         try:
             text = self.path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return _default_document()
         except UnicodeDecodeError as exc:
             raise InvalidConfigError(f"Config is not valid UTF-8: {self.path}") from exc
 

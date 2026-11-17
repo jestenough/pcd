@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
 CACHE_SCHEMA_VERSION = 3
+_PROJECT_SOURCES = tuple(source.value for source in ProjectSource)
 
 
 class _CacheReadError(Exception):
@@ -100,7 +101,7 @@ class ProjectCache:
                     "version": CACHE_SCHEMA_VERSION,
                     "refresh_started_ns": refresh_started_ns,
                 }
-                json.dump(header, stream, separators=(",", ":"))
+                stream.write(json.dumps(header, separators=(",", ":")))
                 stream.write("\n")
 
                 for project in projects:
@@ -114,7 +115,7 @@ class ProjectCache:
                             for discovery in project.discoveries
                         ],
                     }
-                    json.dump(entry, stream, ensure_ascii=False, separators=(",", ":"))
+                    stream.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")))
                     stream.write("\n")
 
         return True
@@ -145,7 +146,7 @@ class ProjectCache:
 def _read_json(line: str) -> object:
     try:
         return json.loads(line)
-    except json.JSONDecodeError as exc:
+    except (ValueError, RecursionError) as exc:
         raise _CacheReadError("Invalid cache JSON") from exc
 
 
@@ -178,7 +179,7 @@ def _is_cache_entry(value: object) -> TypeGuard[ProjectCacheEntry]:
         isinstance(value.get("name"), str)
         and isinstance(value.get("path"), str)
         and isinstance(value.get("display"), str)
-        and isinstance(value.get("source"), str)
+        and value.get("source") in _PROJECT_SOURCES
         and _is_discovery_list(value.get("discoveries"))
     )
 

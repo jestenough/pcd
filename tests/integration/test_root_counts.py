@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pcd_cli.cache import ProjectCache
-from pcd_cli.catalog import ProjectCatalog
+from pcd_cli.catalog import count_discovered_by_root, ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.cli.roots import RootListRow, RootListTable
+from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Discovery, Project, ProjectSource
 
 if TYPE_CHECKING:
@@ -23,7 +24,10 @@ def reloaded_projects(catalog: ProjectCatalog) -> list[Project]:
 
 
 def counts_by_root(roots: Sequence[Path], projects: Sequence[Project]) -> list[str]:
-    return [RootListRow.from_root(root, projects).projects for root in roots]
+    counts = count_discovered_by_root(projects)
+    return [
+        RootListRow.from_root(root, counts.get(canonical_path(root), 0)).projects for root in roots
+    ]
 
 
 def write_roots_config(
