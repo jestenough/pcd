@@ -36,7 +36,7 @@ def show_config(catalog: ProjectCatalog) -> None:
 @config_commands.command("edit")
 @click.pass_obj
 def edit_config(catalog: ProjectCatalog) -> None:
-    """Open the user configuration in $VISUAL or $EDITOR."""
+    """Edit configuration using editor, $VISUAL, or $EDITOR (in that order)."""
     try:
         editor = catalog.config.load().editor
     except InvalidConfigError:
@@ -45,14 +45,18 @@ def edit_config(catalog: ProjectCatalog) -> None:
     editor = editor or os.environ.get("VISUAL") or os.environ.get("EDITOR")
 
     if editor is None:
-        raise click.UsageError("Set $VISUAL or $EDITOR before running `pcd config edit`")
+        raise click.UsageError(
+            "Set editor in the configuration or $VISUAL or $EDITOR before running `pcd config edit`"
+        )
 
     try:
         command = shlex.split(editor)
     except ValueError as exc:
         raise click.UsageError(f"Invalid editor command: {exc}") from exc
     if not command:
-        raise click.UsageError("Set $VISUAL or $EDITOR before running `pcd config edit`")
+        raise click.UsageError(
+            "Set editor in the configuration or $VISUAL or $EDITOR before running `pcd config edit`"
+        )
 
     catalog.config.ensure_exists()
 

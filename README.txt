@@ -1,95 +1,72 @@
 Project cd
 ==========
 
-pcd (project cd) - Is a fast way to jump between projects from your terminal
+pcd (project cd) is a fast way to jump between local projects from your terminal.
 
 Instead of:
     cd ~/development/github/palantir/backend/pigeon-surveillance
 Just:
     pcd pigeon-surveillance
 
+
+REQUIREMENTS AND SUPPORT
+------------------------
+Python:     >=3.12,<4
+Platforms:  Linux, macOS, Windows
+
 Supported shells:
-* Bash
-* Zsh
-* Fish
-* PowerShell 7+
-* Windows PowerShell 5.1
-* Command Prompt (cmd)
-* Git Bash on Windows
+    * Bash / Git Bash
+    * Zsh
+    * Fish
+    * PowerShell 7+
+    * Windows PowerShell 5.1
+    * CMD
 
 
 INSTALL
 -------
-Requires Python 3.12 or newer.
-Supported platforms are Linux, macOS, and Windows.
-
     pipx install git+https://github.com/jestenough/pcd.git
     pcd shell install
-Restart your shell after installing shell integration.
+
+Restart your shell or run the reload command printed by the installer.
+Active shell integration is required to change the current shell's directory.
+
+Windows: Execution Policy can block your PowerShell profile, while App Control
+can block pcd.exe itself. These require different fixes; see docs/windows.rst.
 
 
 QUICK START
-----------
-    cd <your root folder, e.g. ~/Github/>
-    pcd init
-    pcd <project name from your root folder>
-pcd discovers projects inside registered scan roots.
-
-
-COMMANDS
---------
-
-    pcd <project>                Jump to a project
-    pcd                          Show help
-
-    pcd add <path>               Add a project manually
-    pcd remove <project>         Remove a manual project
-
-    pcd init                     Add the current directory as a scan root
-    pcd uninit                   Remove the current directory from scan roots
-    pcd roots                    List scan roots
-    pcd refresh                  Rescan roots, show added, removed, and total projects
-
-    pcd list [options]           List and filter known projects
-    pcd config path              Print the configuration file path
-    pcd config show              Print the effective configuration
-    pcd config edit              Edit the user configuration
-    pcd config validate          Validate the user configuration
-
-    pcd shell install            Install shell integration
-    pcd shell init <shell>       Print shell integration code
-    pcd shell status             Show shell integration status
-    pcd shell uninstall          Remove shell integration
-
-    pcd --project <project>      Jump to a project whose name matches a command
-    pcd --version                Show version
-    pcd --help                   Show help
-
-* Projects inside registered roots are discovered automatically.
-* You can register multiple scan roots.
-* When several projects match, type to filter the picker, use Up/Down to move,
-  Enter to select, or Escape/Ctrl-C to cancel.
-* Filter `pcd list` with `--manual`, `--discovered`, or `--missing`.
-* Use `pcd list --json` for machine-readable output.
-* Set `editor = "nvim"` in the configuration to choose an editor for `pcd config edit`.
-
-
-DEVELOPMENT
 -----------
-    make install
-    make check
-    make build
-See ./dist folder
-You can install *.whl with your python package manager
+    cd <your projects folder, e.g. ~/Github/>
+    pcd init
+    pcd <project name>
+
+pcd discovers Git repositories inside registered scan roots. Use pcd add to
+register an ordinary directory, and pcd refresh to rescan existing roots.
 
 
-SEE ALSO
---------
-    Features:
-        FEATURES.txt
+COMMON COMMANDS
+---------------
+    pcd <project>                Find a project and jump to it
+    pcd add [path] [--name NAME]  Register a directory (default: current directory)
+    pcd remove <project>         Remove a manual registration, keeping its directory
+    pcd list                    List known projects
+    pcd roots                   List scan roots
+    pcd refresh                 Rescan roots
+    pcd shell status [shell]     Inspect shell integration
+    pcd --help                  Show all commands
 
-    Planned changes:
-        ROADMAP.txt
 
-    License:
-        MIT
+DOCUMENTATION
+-------------
+    docs/usage.rst             All commands, search, and the project picker
+    docs/shells.rst            Automatic/manual shell setup and migration
+    docs/windows.rst           Execution Policy and Application Control errors
+    docs/troubleshooting.rst   Other shell startup problems on Linux/macOS/Windows
+    docs/configuration.rst     Configuration, editor, and scan settings
+    docs/development.rst       Development, checks, builds, and benchmarks
+
+Browse online: https://github.com/jestenough/pcd/tree/master/docs
+
+See FEATURES.txt for behavior details and ROADMAP.txt for planned changes.
+License: MIT (LICENSE).

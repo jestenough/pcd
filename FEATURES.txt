@@ -10,9 +10,19 @@ PROJECT NAVIGATION
 
     The interactive picker opens when a project query has multiple matches.
     Type to filter, use Up/Down to move, Enter to select, or Escape/Ctrl-C to cancel.
+    The picker filters the initial matches; editing the query does not search
+    outside that result set. Canceling leaves the current directory unchanged.
+
+    Search ignores case and prefers exact names, then prefix, substring, and fuzzy
+    matches. A unique exact name is selected directly. Equal text matches use
+    last-used time and usage count as tie-breakers; duplicate names remain selectable.
 
     Resolve a project whose name conflicts with a command:
         pcd --project <project>
+    This uses exact-name lookup only and cannot be combined with a subcommand.
+
+    Directory changes require an active shell wrapper. Without it, pcd prints
+    the destination and an integration hint instead of changing the parent shell.
 
 
 PROJECT DISCOVERY
@@ -29,7 +39,18 @@ PROJECT DISCOVERY
     Rescan roots, show added, removed, and total projects:
         pcd refresh
 
-    Projects inside registered roots are discovered automatically.
+    Git repositories with a .git directory or worktree file are discovered when
+    roots are registered, when the cache must be rebuilt, or after a search miss.
+    There is no background watcher. A valid cache is reused by list and roots;
+    use pcd refresh to force an update, including after manual config edits.
+
+    Hidden directories are included by default; common dependency/build directory
+    names are excluded. Scanning stops at a repository boundary. Symlinked trees
+    are not followed by default, but a symlink directly to a repository is discovered.
+    Configure scan.hidden, scan.follow_symlinks, and scan.exclude to change these rules.
+
+    Refresh added/removed counts compare discovered project paths. The total includes
+    manual projects. Missing manual registrations remain in the configuration.
 
     Root counts show how many discovered projects each root contributed, not how
     many canonical paths happen to be contained below it. A project is counted once
@@ -37,30 +58,36 @@ PROJECT DISCOVERY
     through followed symlinks. Manual projects are not counted.
 
     The cache records the root and display route for every discovery. When the cache
-    schema changes, older snapshots are rebuilt automatically on the next read; user
-    configuration is never rewritten by that migration.
+    schema changes, older snapshots are rebuilt by the next catalog lookup or refresh;
+    user configuration is never rewritten by that migration. Completion only reads
+    the cache and returns no project candidates if it is absent or invalid; it never
+    scans roots or loads usage history.
 
     Each cache snapshot records when its refresh began. If a newer refresh publishes
     while an older refresh is still scanning, the older refresh cannot overwrite the
-    newer snapshot. The cache remains the last successfully published snapshot.
+    newer valid snapshot. A corrupt snapshot can be rebuilt.
 
     Configuration changes use read-modify-write locking, so concurrent root and manual
     project changes are not lost. Configuration changes and cache publication may run
     concurrently; an older scan cannot replace a newer published cache snapshot.
 
-    If a filesystem error prevents a root or subdirectory from being read, the scan
-    is incomplete. `pcd refresh` reports the failing path and leaves the last complete
-    cache snapshot in place instead of publishing partial results. Missing roots are
-    still skipped and handled as unavailable locations.
+    If a filesystem error prevents a root, subdirectory, or .git marker from being
+    inspected, the scan is incomplete. `pcd refresh` reports the failing path and leaves
+    the last complete cache snapshot in place instead of publishing partial results.
+    Missing roots are still skipped and handled as unavailable locations.
 
 
 MANUAL PROJECTS
 
-    Register a directory manually:
-        pcd add <path>
+    Register an existing directory manually, optionally with a custom name:
+        pcd add [path] [--name <name>]
+    Omitting path registers the current directory. A .git marker is not required.
+    A path already known through a root or manual registration is not added again.
 
     Remove a manually registered project:
         pcd remove <project>
+    The directory is never deleted. Automatically discovered projects cannot yet
+    be removed by this command; project exclusions are planned in ROADMAP.txt.
 
 
 PROJECT LIST
@@ -74,6 +101,12 @@ PROJECT LIST
         pcd list --missing
         pcd list --json
 
+    Combining --manual and --discovered includes both sources; --missing further
+    restricts the result to unavailable directories. JSON contains name, path,
+    source (manual/discovered), and status (available/missing). Table output labels
+    discovered projects as scanned and may shorten home paths to ~; JSON preserves
+    the full display path, including symlink routes.
+
 
 CONFIGURATION
 
@@ -85,7 +118,19 @@ CONFIGURATION
         pcd config edit
         pcd config validate
 
-    Set `editor = "nvim"` in the configuration to choose an editor for editing.
+    The top-level editor setting takes precedence over VISUAL, then EDITOR.
+    For example, put `editor = "nvim"` before any TOML table header.
+    config edit does not rescan projects: validate and refresh after editing scan roots,
+    manual projects, or scan settings. Unknown keys, invalid types, duplicate paths,
+    and relative config paths are rejected; absolute paths and ~ are supported.
+
+
+USAGE HISTORY
+
+    Successful project selection records last-used time and increments a usage count.
+    History keeps up to 2,048 entries when written. Invalid history is treated as empty.
+    If writing history fails with an I/O error, navigation continues and prints a
+    warning to stderr. This history already exists; further ranking changes are planned.
 
 
 DATA DURABILITY
@@ -117,13 +162,13 @@ SHELL INTEGRATION
         Git Bash on Windows (using the Bash integration)
 
     Install shell integration automatically:
-        pcd shell install
+        pcd shell install [shell]
 
     CMD installation registers an exact DOSKEY command in the current user's AutoRun
     value without changing PATH or replacing unrelated AutoRun commands.
 
     Check shell integration status:
-        pcd shell status
+        pcd shell status [shell]
 
     Status reports the selected shell configuration and the wrapper used for this invocation.
     `Invoked through wrapper: no` does not mean the parent shell has no wrapper installed.
@@ -131,15 +176,37 @@ SHELL INTEGRATION
     The wrapper marker is scoped to its function call, not exported for the whole shell session.
 
     Remove shell integration:
-        pcd shell uninstall
+        pcd shell uninstall [shell]
 
     Print shell integration code:
-        pcd shell init <shell>
+        pcd shell init [shell]
+
+    Shell names are bash, zsh, fish, pwsh, powershell, and cmd (Windows only).
+    If omitted, the shell is detected. On Windows, install prompts when detection
+    fails; other shell commands require an explicit choice in that situation.
+    Install/uninstall preserve manual configuration and unrelated startup commands.
+    Restart the shell or use the reload command printed by the installer.
+
+    Windows PowerShell profile loading is subject to Execution Policy. Install and
+    status check the selected PowerShell edition without loading its profile.
+    Install refuses to edit profiles under Restricted or AllSigned, or if the check
+    fails; status reports a warning. Policies are never changed automatically.
+    A successful check does not validate the profile or guarantee another session's
+    policy. See docs/windows.rst for PSSecurityException / UnauthorizedAccess and
+    docs/troubleshooting.rst for other startup problems on Windows, Linux, and macOS.
+
+    PowerShell managed startup blocks catch executable launch failures, warn, and
+    let the rest of the profile load. Failed initialization output is not evaluated.
+    App Control blocking pcd.exe is separate from Execution Policy blocking a .ps1
+    profile; changing Execution Policy does not resolve an executable block.
+    Existing managed blocks are updated by shell install; manual profiles must be
+    updated by their owner. The CLI cannot run while its executable is blocked.
+    See docs/windows.rst for diagnosis and docs/shells.rst for manual setup.
 
     Shell integration can also be added manually to the shell config.
     Version 0.2.3 removes `pcd shell print` and `pcd shell-init` and moves Python
     imports from `pcd_cli.shell_integration` to `pcd_cli.integrations.shell`.
-    Old startup lines are not migrated automatically; see README.txt for replacement
+    Old startup lines are not migrated automatically; see docs/shells.rst for replacement
     commands and reload instructions for Bash, Zsh, and Fish.
 
 

@@ -104,7 +104,7 @@ def project(catalog: ProjectCatalog, query: str) -> None:
 @click.option("--name", help="Custom name for a manual project.")
 @click.pass_obj
 def add(catalog: ProjectCatalog, path: Path | None, name: str | None) -> None:
-    """Register a directory as a manual project."""
+    """Register PATH (or the current directory) as a manual project."""
     if path is None:
         location = Path.cwd()
     else:
