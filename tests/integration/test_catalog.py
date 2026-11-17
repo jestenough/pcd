@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -15,7 +16,6 @@ from pcd_cli.scanner import ProjectScanner, ScanError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from pcd_cli.cache import ProjectCacheEntry
     from pcd_cli.models import ProjectSettings
@@ -137,6 +137,36 @@ def test_refresh_report_uses_snapshot_from_automatic_scan(
 
     assert [item.name for item in projects.resolve("new").matches] == ["new"]
     assert projects.refresh_with_report() == RefreshReport(added=0, removed=0, total=1)
+
+
+@pytest.mark.parametrize("unreadable", ["root", "git-marker"])
+def test_refresh_preserves_cache_when_metadata_is_unreadable(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unreadable: str,
+) -> None:
+    root = tmp_path / "root"
+    marker = root / "repo" / ".git"
+    marker.mkdir(parents=True)
+    assert projects.config.add_root(root)
+    projects.refresh()
+    previous = projects.cache.path.read_bytes()
+    blocked = root if unreadable == "root" else marker
+    original_stat = Path.stat
+
+    def stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if path == blocked:
+            raise PermissionError(13, "Access denied", str(path))
+        return original_stat(path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", stat)
+
+    with pytest.raises(ScanError) as caught:
+        projects.refresh()
+
+    assert caught.value.errors[0][0] == blocked
+    assert projects.cache.path.read_bytes() == previous
 
 
 def test_projects_build_cache_when_missing(projects: ProjectCatalog, tmp_path: Path) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, replace
 from pathlib import Path
+from stat import S_ISDIR
 from typing import TYPE_CHECKING
 
 from pcd_cli.filesystem import canonical_path
@@ -140,7 +141,8 @@ class ProjectScanner:
                 )
 
     def _walk(self, root: Path, display_path: Path) -> Iterator[Project]:
-        if not root.is_dir():
+        root_stat = _stat_for_scan(root)
+        if root_stat is None or not S_ISDIR(root_stat.st_mode):
             return
 
         visited = set[tuple[int, int]]() if self.settings.follow_symlinks else None
@@ -219,4 +221,15 @@ def _mark_visited(
 
 
 def _is_git_repository(path: Path) -> bool:
-    return (path / ".git").exists()
+    return _stat_for_scan(path / ".git") is not None
+
+
+def _stat_for_scan(path: Path) -> os.stat_result | None:
+    # Path.exists()/is_dir() can hide permission and other I/O errors as False.
+    # Only an absent path may be skipped without invalidating the snapshot.
+    try:
+        return path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as exc:
+        raise ScanError([(path, exc)]) from exc
