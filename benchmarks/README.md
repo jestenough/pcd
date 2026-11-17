@@ -3,7 +3,7 @@
 Run from the checkout with project dependencies installed:
 
 ```sh
-poetry run python benchmarks/compare_cli.py --baseline master --output cli-comparison.json
+poetry run python benchmarks/compare_cli.py --baseline master --output benchmarks/baselines/local.json
 ```
 
 The baseline is resolved to a commit and exported to a temporary directory. The
@@ -27,9 +27,7 @@ Default matrix:
   exact misses that rescan the roots, and manual add (including conflict scan);
 - one warm-up followed by seven timing samples, alternating revision order;
 - separate memory runs with Python allocation peak and process peak RSS;
-- cache publication time and disk usage during fixture setup (single observations);
-- 50 atomic replacements with and without parent-directory synchronization, reporting
-  the extra durability cost on the current platform.
+- cache publication time and cache-file size during fixture setup (single observations).
 
 Timing includes process startup, imports, cache/history I/O and process exit.
 Tree fixtures include `.git` directories in either one wide root or groups of 25.
@@ -49,9 +47,10 @@ Memory is measured in separate processes: Python allocation peaks with
 `-X tracemalloc`, and peak process RSS without tracing overhead.
 
 JSON contains raw timing samples, medians, p90, memory observations, interpreter,
-platform and baseline commit. Memory is sampled separately, not as a timing
-distribution; Bash wrapper memory describes the CLI child, not the shell. Save
-measurements are single fixture-setup observations rather than distributions.
+platform, baseline commit, and a hash of the candidate Python source. Memory is
+sampled separately, not as a timing distribution; Bash wrapper memory describes
+the CLI child, not the shell. Save measurements are single fixture-setup observations
+rather than distributions.
 Do not infer a platform-wide guarantee from one local run.
 
 For local runs, use `--output benchmarks/baselines/<name>.json` to keep
@@ -64,3 +63,23 @@ The `CLI baseline comparison` workflow runs the same matrix on Linux, macOS
 and Windows for relevant pull requests, and accepts a baseline revision for
 manual runs. Download its three artifacts before marking cross-platform
 performance validation complete.
+
+## Performance limits and atomic-write cost
+
+These checks are separate from the CLI baseline comparison and its JSON artifacts:
+
+```sh
+poetry run pytest benchmarks -q -s
+```
+
+`make bench` runs the same command. `benchmarks/test_bench.py` checks cache lookup
+and load at 100,000 projects, fuzzy search at 10,000 projects, retained allocations
+after repeated searches, and scanning 250 repositories. The limits are encoded in
+the tests and run in the Linux `Performance limits` CI job. Ordinary `pytest`
+collects `tests/` only, so it does not run these benchmarks.
+
+The atomic-write check times batches of 50 replacements with and without
+parent-directory synchronization, retaining the best of three batches for each.
+It prints the two timings and their difference. File-content fsync remains enabled
+in both cases. On Windows the directory-sync step is a no-op, so the difference
+is measurement noise rather than a directory-sync durability cost.

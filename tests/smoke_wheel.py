@@ -35,6 +35,8 @@ def smoke_wheel(expected_version: str) -> None:
             USERPROFILE=str(home),
             APPDATA=str(root / "roaming"),
             LOCALAPPDATA=str(root / "local"),
+            WIN_PD_OVERRIDE_APPDATA=str(root / "roaming"),
+            WIN_PD_OVERRIDE_LOCAL_APPDATA=str(root / "local"),
             XDG_CONFIG_HOME=str(root / "config"),
             XDG_CACHE_HOME=str(root / "cache"),
             XDG_STATE_HOME=str(root / "state"),

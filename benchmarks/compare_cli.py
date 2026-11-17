@@ -51,6 +51,8 @@ def environment(source: Path, home: Path) -> dict[str, str]:
         USERPROFILE=str(home),
         APPDATA=str(home / "roaming"),
         LOCALAPPDATA=str(home / "local"),
+        WIN_PD_OVERRIDE_APPDATA=str(home / "roaming"),
+        WIN_PD_OVERRIDE_LOCAL_APPDATA=str(home / "local"),
         XDG_CONFIG_HOME=str(home / "config"),
         XDG_CACHE_HOME=str(home / "cache"),
         XDG_STATE_HOME=str(home / "state"),
@@ -116,7 +118,7 @@ def measure(
     operation: Operation,
     homes: dict[str, Path],
     envs: dict[str, dict[str, str]],
-    snapshots: dict[str, dict[Path, bytes]],
+    snapshots: dict[str, dict[Path, bytes | None]],
     repeats: int,
     *,
     size: int,
@@ -125,7 +127,10 @@ def measure(
 ) -> list[dict[str, object]]:
     def restore(label: str) -> None:
         for path, content in snapshots[label].items():
-            path.write_bytes(content)
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(content)
 
     def run(
         label: str, *, memory: bool = False, trace: bool = False
@@ -218,7 +223,7 @@ def compare(
                     for label in ("baseline", "candidate")
                 }
                 envs: dict[str, dict[str, str]] = {}
-                snapshots: dict[str, dict[Path, bytes]] = {}
+                snapshots: dict[str, dict[Path, bytes | None]] = {}
                 for label, home in homes.items():
                     home.mkdir()
                     envs[label] = environment(
@@ -228,10 +233,10 @@ def compare(
                     if prepared.returncode:
                         raise RuntimeError(prepared.stderr)
                     setup = json.loads(prepared.stdout)
-                    history_path = Path(setup.pop("history_path"))
-                    setup.pop("config_path")
-                    setup.pop("cache_path")
-                    snapshots[label] = {history_path: history_path.read_bytes()}
+                    snapshots[label] = {}
+                    for key in ("config_path", "cache_path", "history_path"):
+                        path = Path(setup.pop(key))
+                        snapshots[label][path] = path.read_bytes() if path.is_file() else None
                     if bash:
                         wrapper_shim(home)
                         envs[label]["PATH"] = f"{home / 'bin'}{os.pathsep}{envs[label]['PATH']}"
