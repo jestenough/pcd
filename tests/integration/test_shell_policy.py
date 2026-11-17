@@ -38,7 +38,7 @@ def test_install_does_not_modify_profile_when_policy_check_fails(
         profile.parent.mkdir(parents=True)
         profile.write_bytes(original)
     monkeypatch.setattr(
-        powershell_policy.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, policy, ""),
     )
@@ -58,7 +58,7 @@ def test_allowed_install_and_restricted_status(
 ) -> None:
     policy = "RemoteSigned"
     monkeypatch.setattr(
-        powershell_policy.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, policy, ""),
     )

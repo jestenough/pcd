@@ -22,10 +22,10 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.5.0,<9",
-    "platformdirs>=4.12.2,<5",
+    "platformdirs>=4.13.5,<5",
     "prompt-toolkit>=3.0.53,<4",
     "shellingham>=1.5.4,<2; sys_platform == 'win32'",
-    "tomlkit>=0.15.1,<1",
+    "tomlkit>=0.15.2,<1",
 ]
 
 [project.scripts]
@@ -39,11 +39,11 @@ build-backend = "poetry.core.masonry.api"
 packages = [{ include = "pcd_cli", from = "src" }]
 
 [tool.poetry.group.dev.dependencies]
-mypy = "2.3.1"
-pre-commit = "4.6.2"
+mypy = "2.4.0"
+pre-commit = "4.7.0"
 pytest = "9.1.1"
 pytest-cov = "7.1.0"
-ruff = "0.17.0"
+ruff = "0.17.1"
 
 [tool.ruff]
 target-version = "py312"

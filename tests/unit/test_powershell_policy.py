@@ -38,7 +38,7 @@ def test_policy_check(
         assert kwargs["capture_output"] is True
         return subprocess.CompletedProcess(args, 0, f"{policy}\r\n", "")
 
-    monkeypatch.setattr(powershell_policy.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
 
     issue = PowerShellDriver(shell, Platform.WINDOWS).installation_issue()
 
@@ -73,7 +73,7 @@ def test_policy_probe_failure_is_actionable(monkeypatch: pytest.MonkeyPatch, fai
             case _:
                 return subprocess.CompletedProcess(args, 0, "", "")
 
-    monkeypatch.setattr(powershell_policy.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
 
     issue = powershell_policy.installation_issue(Shell.PWSH)
 
