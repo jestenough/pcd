@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version-file: .python-version
           check-latest: true
@@ -90,7 +90,7 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ matrix.python }}
           check-latest: true
@@ -133,7 +133,7 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ matrix.python }}
           check-latest: true
@@ -151,7 +151,7 @@ jobs:
 
       - name: Install package and test tools
         id: install_tools
-        run: python -m pip install . "pytest==9.1.1" "mypy==2.3.1"
+        run: python -m pip install . "pytest==9.1.1" "mypy==2.4.0"
 
       - name: Check Windows types
         run: python -m mypy src
@@ -195,7 +195,7 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version-file: .python-version
           check-latest: true
@@ -225,7 +225,7 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version-file: .python-version
           check-latest: true
