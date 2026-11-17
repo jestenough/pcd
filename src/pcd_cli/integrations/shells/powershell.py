@@ -55,7 +55,43 @@ class PowerShellDriver(StartupDriver):
         return f". '{escaped}'"
 
     def startup_command(self) -> str:
-        return f"pcd shell init {self.shell.value} | Out-String | Invoke-Expression"
+        warning = "pcd: shell integration was not loaded. "
+        if self.platform is Platform.WINDOWS:
+            warning += (
+                "If Windows App Control blocked pcd.exe, use an approved installation or "
+                "contact your administrator. Set-ExecutionPolicy does not unblock executables. "
+                "See docs/windows.rst (Application Control). "
+            )
+        return dedent(
+            f"""\
+            try {{
+                $__pcdInit = pcd shell init {self.shell.value}
+                if ($LASTEXITCODE -ne 0) {{
+                    throw "pcd shell init failed (exit code $LASTEXITCODE)."
+                }}
+                if ($__pcdInit) {{
+                    $__pcdInit | Out-String | Invoke-Expression
+                }}
+            }} catch {{
+                $global:LASTEXITCODE = 1
+                $__pcdFailure = $_.Exception
+                if ($__pcdFailure.InnerException) {{
+                    $__pcdFailure = $__pcdFailure.InnerException
+                }}
+                Write-Warning ("{warning}" + $__pcdFailure.Message)
+            }} finally {{
+                Remove-Variable __pcdInit, __pcdFailure -ErrorAction SilentlyContinue
+            }}
+            """
+        ).rstrip()
+
+    def installation_issue(self) -> str | None:
+        if self.platform is not Platform.WINDOWS:
+            return None
+
+        from pcd_cli.integrations.shells.powershell_policy import installation_issue
+
+        return installation_issue(self.shell)
 
     def render(self) -> str:
         return dedent(

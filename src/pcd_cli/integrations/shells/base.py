@@ -27,6 +27,10 @@ class ShellDriver(ABC):
     @abstractmethod
     def reload_command(self, path: Path) -> str: ...
 
+    def installation_issue(self) -> str | None:
+        """Explain an environment restriction before changing the startup file."""
+        return None
+
     @abstractmethod
     def state(self, path: Path) -> ShellIntegrationState: ...
 

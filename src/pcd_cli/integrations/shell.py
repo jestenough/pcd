@@ -63,6 +63,9 @@ class ConfiguredShell:
     def reload_command(self) -> str:
         return self._driver.reload_command(self.config_path)
 
+    def installation_issue(self) -> str | None:
+        return self._driver.installation_issue()
+
     def install(self) -> ShellChange:
         return self._driver.install(self.config_path)
 

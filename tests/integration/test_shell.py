@@ -12,6 +12,7 @@ import pytest
 
 import pcd_cli.integrations.shells.cmd as cmd_shell
 import pcd_cli.integrations.shells.cmd_autorun as cmd_autorun
+import pcd_cli.integrations.shells.powershell_policy as powershell_policy
 import pcd_cli.integrations.shells.windows_registry as windows_registry
 import pcd_cli.integrations.shells.windows_shell as windows_shell
 from pcd_cli.cli import cli
@@ -32,6 +33,14 @@ if TYPE_CHECKING:
     from click.testing import CliRunner
 
 CMD_DRIVER = cmd_shell.CmdDriver(Shell.CMD, current_platform())
+
+
+@pytest.fixture(autouse=True)
+def isolated_shell_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # HOME alone does not isolate Documents when the Windows Registry redirects it.
+    monkeypatch.setattr(windows_registry, "read", lambda _key, _name: None)
+    # Policy-dependent behavior is covered separately in test_shell_policy.py.
+    monkeypatch.setattr(powershell_policy, "installation_issue", lambda _shell: None)
 
 
 def test_bash_native(runner: CliRunner) -> None:

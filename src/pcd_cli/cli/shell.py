@@ -24,10 +24,18 @@ def shell_commands() -> None:
     type=click.Choice([item.value for item in Shell], case_sensitive=False),
 )
 def install_shell(shell: str | None) -> None:
-    """Install persistent shell integration into the shell startup file."""
+    """Install persistent integration in a startup file or CMD AutoRun.
+
+    On Windows, PowerShell execution policy is checked before editing the profile.
+    pcd never changes the policy automatically.
+    """
     platform = current_platform()
     selected = _select_shell(shell, platform, prompt=True)
     integration = ConfiguredShell.for_shell(selected, platform)
+    if issue := integration.installation_issue():
+        raise click.ClickException(
+            f"Shell integration was not installed; profile left unchanged.\n{issue}"
+        )
     result = integration.install()
     if result is ShellChange.CHANGED:
         click.echo(f"Installed {integration.shell.value} integration in {integration.config_path}")
@@ -60,6 +68,8 @@ def shell_status(shell: str | None) -> None:
     wrapper: Shell | None = invoking_shell()
     invoked = "no" if wrapper is None else f"yes ({wrapper.value})"
     click.echo(f"Invoked through wrapper: {invoked}")
+    if issue := integration.installation_issue():
+        click.echo(f"Warning: {issue}", err=True)
 
 
 @shell_commands.command("uninstall")
