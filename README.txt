@@ -51,6 +51,7 @@ COMMON COMMANDS
     pcd add [path] [--name NAME]  Register a directory or restore an excluded project
     pcd remove <project>         Unregister or exclude a project, keeping its directory
     pcd info <project>           Show paths, source, discovery routes and status
+    pcd doctor                   Check configuration, cache, paths and shell integration
     pcd list                    List known projects
     pcd roots                   List scan roots
     pcd refresh                 Rescan roots

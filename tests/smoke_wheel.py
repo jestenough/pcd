@@ -72,6 +72,7 @@ def smoke_wheel(expected_version: str) -> None:
         assert json.loads(run("list", "--json")) == []
         run("add", str(repo))
         assert "Source: discovered" in run("info", "repo")
+        assert "doctor" in help_text
         for shell in ("bash", "zsh", "fish", "powershell", "pwsh"):
             assert "pcd" in run("shell", "init", shell)
         if sys.platform == "win32":

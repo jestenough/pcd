@@ -40,7 +40,8 @@ which directory names the scanner skips. An example before any table header::
     excluded_projects = ["~/development/archive/old-checkout"]
 
 Use ``pcd add PATH`` to restore an excluded directory. Missing entries are kept
-so a returning disk or checkout still respects the exclusion. After editing the file manually, run ``pcd config validate``
+so a returning disk or checkout still respects the exclusion. ``pcd doctor``
+reports missing paths. After editing the file manually, run ``pcd config validate``
 and ``pcd refresh``.
 
 Earlier releases reject the new TOML key. Before downgrading, back up the

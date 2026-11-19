@@ -14,6 +14,7 @@ Command reference
     pcd add [path] [--name NAME]  Register a directory or restore an excluded project
     pcd remove <project>         Unregister or exclude a project, keeping its directory
     pcd info <project>           Show paths, source, discovery routes and status
+    pcd doctor                   Check configuration, cache, paths and shell integration
 
     pcd init                     Add the current directory as a scan root
     pcd uninit                   Remove the current directory from scan roots
@@ -70,6 +71,14 @@ Adding an excluded directory restores discovery when a registered root still fin
 it. Use ``--name NAME`` to restore it as a manual registration. An existing directory
 outside discovery is also restored as manual. Refresh drops vanished discoveries
 from the cache and keeps user-defined roots, manual registrations and exclusions.
+
+Run ``pcd doctor`` for a read-only check of configuration, cache integrity, roots,
+project directories, stale exclusions, the executable on PATH, and shell integration.
+It also reports excluded projects still in the cache and manual registrations
+that disagree with the cache. It returns status 1 when it finds an issue.
+An undetectable shell is reported as unknown. Use ``pcd shell status SHELL`` for a
+specific shell. If you suspect a stale reference, run doctor before refreshing so it
+can also inspect discoveries still present in the old cache.
 
 Search and selection
 --------------------

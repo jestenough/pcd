@@ -1,8 +1,10 @@
 Shell startup troubleshooting
 =============================
 
-Use ``pcd shell status <shell>`` to find the installed file, check your shell's
-startup errors, and verify that ``pcd --version`` runs in that same shell.
+Run ``pcd doctor`` in the affected shell to check whether pcd is on PATH and
+whether it can detect the shell integration. Use ``pcd shell status <shell>`` to
+find the installed file. Check startup errors and run ``pcd --version`` in that
+same shell.
 A configured file does not prove that the current session loaded it successfully.
 
 For Windows profile restrictions or a blocked ``pcd.exe``, see the separate

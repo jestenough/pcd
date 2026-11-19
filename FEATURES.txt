@@ -98,6 +98,10 @@ PROJECT REGISTRATION AND INSPECTION
         pcd info <project>
     Both info and remove offer completion and duplicate-name selection.
 
+    Diagnose the catalog and local setup without changing them:
+        pcd doctor
+    Missing roots, manual projects and stale exclusions remain in configuration.
+
 
 PROJECT LIST
 

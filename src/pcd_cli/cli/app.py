@@ -6,6 +6,7 @@ import click
 
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli.config import config_commands
+from pcd_cli.cli.doctor import doctor_command
 from pcd_cli.cli.projects import project_commands
 from pcd_cli.cli.roots import root_commands
 from pcd_cli.cli.shell import shell_commands
@@ -75,7 +76,7 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
     if project_name is not None and ctx.invoked_subcommand is not None:
         raise click.UsageError("--project cannot be combined with a command")
 
-    if ctx.invoked_subcommand == "shell":
+    if ctx.invoked_subcommand in ("shell", "doctor"):
         return
 
     catalog = ProjectCatalog.create()
@@ -94,6 +95,7 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
 for command in (
     *project_commands,
     *root_commands,
+    doctor_command,
     config_commands,
     shell_commands,
 ):

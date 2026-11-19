@@ -224,6 +224,30 @@ class SQLiteProjectStore:
                 raise
             yield SQLiteSnapshot(conn, int(generation), count)
 
+    def inspect(self) -> list[Project]:
+        """Validate a disk snapshot without migration, recovery or SQLite sidecar writes."""
+        import sqlite3
+
+        # Our writer uses rollback journals. Refuse externally enabled WAL before
+        # connecting: SQLite may otherwise create a shared-memory sidecar even for
+        # a read-only connection. A normal read transaction keeps concurrent pcd
+        # refreshes consistent and never attempts hot-journal recovery here.
+        with self.path.open("rb") as stream:
+            header = stream.read(20)
+        if len(header) == 20 and (header[18] == 2 or header[19] == 2):
+            raise OSError(
+                "Cache uses unsupported WAL journaling; inspection could create sidecars. "
+                "Restore DELETE journal mode with SQLite while pcd is idle"
+            )
+        try:
+            with self._snapshot() as snapshot:
+                with closing(snapshot.connection.execute("PRAGMA integrity_check")) as cursor:
+                    if cursor.fetchall() != [("ok",)]:
+                        raise _CacheReadError("SQLite integrity check failed")
+                return list(snapshot.projects())
+        except (_CacheReadError, UnicodeError, sqlite3.DatabaseError) as exc:
+            raise OSError(f"Invalid project cache: {exc}") from exc
+
     @contextmanager
     def _read_snapshot(self, *, recover_journal: bool) -> Generator[SQLiteSnapshot]:
         import sqlite3

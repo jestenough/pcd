@@ -6,6 +6,7 @@ from pcd_cli.cli.config import (
     show_config,
     validate_config,
 )
+from pcd_cli.cli.doctor import doctor_command
 from pcd_cli.cli.projects import add, info, list_projects, project, remove
 from pcd_cli.cli.roots import init, refresh, roots, uninit
 from pcd_cli.cli.shell import (
@@ -21,6 +22,7 @@ __all__ = [
     "add",
     "cli",
     "config_commands",
+    "doctor_command",
     "edit_config",
     "info",
     "init",
