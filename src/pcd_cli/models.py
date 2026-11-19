@@ -45,6 +45,7 @@ class ProjectSettings:
     follow_symlinks: bool
     excluded_names: frozenset[str]
     editor: str | None = None
+    excluded_projects: frozenset[Path] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

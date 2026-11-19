@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
     from tomlkit import TOMLDocument
 
-ROOT_KEYS = frozenset({"roots", "scan", "projects", "editor"})
+ROOT_KEYS = frozenset({"roots", "scan", "projects", "editor", "excluded_projects"})
 SCAN_KEYS = frozenset({"hidden", "follow_symlinks", "exclude"})
 PROJECT_KEYS = frozenset({"name", "path"})
 
@@ -48,6 +48,7 @@ class Config:
         settings = self.load()
         document = _default_document()
         document["roots"] = [str(item) for item in settings.roots]
+        document["excluded_projects"] = sorted(str(item) for item in settings.excluded_projects)
         document["scan"]["hidden"] = settings.include_hidden
         document["scan"]["follow_symlinks"] = settings.follow_symlinks
         document["scan"]["exclude"] = sorted(settings.excluded_names)
@@ -111,6 +112,10 @@ class Config:
                 {"name": item.name, "path": str(item.display_path)}
                 for item in (*settings.manual_projects, project)
             ]
+            if project.path in settings.excluded_projects:
+                document["excluded_projects"] = sorted(
+                    str(item) for item in settings.excluded_projects - {project.path}
+                )
             self._write(document)
 
             return _decode_settings(document.unwrap())
@@ -130,6 +135,48 @@ class Config:
             ]
             self._write(document)
             return True
+
+    def exclude_project(self, path: Path) -> bool:
+        """Persist a canonical discovery exclusion without touching the directory."""
+        target = canonical_path(path)
+        with file_lock(self.path):
+            document = self._read()
+            settings = _decode_settings(document.unwrap())
+            if target in settings.excluded_projects or any(
+                item.path == target for item in settings.manual_projects
+            ):
+                return False
+            document["excluded_projects"] = sorted(
+                str(item) for item in settings.excluded_projects | {target}
+            )
+            self._write(document)
+            return True
+
+    def restore_project(
+        self, project: Project, *, manual: bool, expected: ProjectSettings
+    ) -> ProjectSettings | None:
+        """Atomically restore an excluded project, optionally registering it manually."""
+        if project.source is not ProjectSource.MANUAL:
+            raise ValueError("Only manual projects belong in the config")
+        with file_lock(self.path):
+            document = self._read()
+            settings = _decode_settings(document.unwrap())
+            if settings != expected:
+                return None
+            if project.path not in settings.excluded_projects or any(
+                item.path == project.path for item in settings.manual_projects
+            ):
+                return None
+            document["excluded_projects"] = sorted(
+                str(item) for item in settings.excluded_projects - {project.path}
+            )
+            if manual:
+                document["projects"] = [
+                    {"name": item.name, "path": str(item.display_path)}
+                    for item in (*settings.manual_projects, project)
+                ]
+            self._write(document)
+            return _decode_settings(document.unwrap())
 
     def _read(self) -> TOMLDocument:
         try:
@@ -153,6 +200,7 @@ def _default_document() -> TOMLDocument:
     document = tomlkit.document()
     document.add(tomlkit.comment("pcd-cli configuration"))
     document["roots"] = []
+    document["excluded_projects"] = []
 
     scan = tomlkit.table()
     scan["hidden"] = True
@@ -174,6 +222,14 @@ def _decode_settings(value: object) -> ProjectSettings:
     manual_projects = tuple(
         _decode_manual_project(item) for item in _array(config.get("projects", []), "projects")
     )
+    excluded_paths = tuple(
+        canonical_path(_absolute_path(item, "excluded project path"))
+        for item in _array(config.get("excluded_projects", []), "excluded_projects")
+    )
+    if len(set(excluded_paths)) != len(excluded_paths):
+        raise InvalidConfigError("Config contains duplicate excluded projects")
+    if set(excluded_paths) & {project.path for project in manual_projects}:
+        raise InvalidConfigError("Manual projects cannot also be excluded projects")
     scan = _table(config.get("scan", {}), "scan must be a table")
     _validate_keys(scan, SCAN_KEYS, "scan")
     include_hidden = _boolean(scan.get("hidden", True), "scan.hidden")
@@ -200,6 +256,7 @@ def _decode_settings(value: object) -> ProjectSettings:
         follow_symlinks=follow_symlinks,
         excluded_names=excluded_names,
         editor=editor,
+        excluded_projects=frozenset(excluded_paths),
     )
 
 
@@ -250,8 +307,11 @@ def _text(value: object, name: str) -> str:
 
 
 def _absolute_path(value: object, name: str) -> Path:
+    text = _text(value, name)
+    if "\x00" in text:
+        raise InvalidConfigError(f"{name} contains a null character")
     try:
-        path = Path(_text(value, name)).expanduser()
+        path = Path(text).expanduser()
     except RuntimeError as exc:
         raise InvalidConfigError(f"{name} contains an unknown home directory") from exc
 

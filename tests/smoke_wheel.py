@@ -65,6 +65,13 @@ def smoke_wheel(expected_version: str) -> None:
         assert json.loads(run("list", "--json")) == [
             {"name": "repo", "path": str(repo), "source": "discovered", "status": "available"}
         ]
+        assert "Source: discovered\nStatus: available" in run("info", "repo")
+        assert "Excluded project: repo" in run("remove", "repo")
+        assert (repo / ".git").is_dir()
+        run("refresh")
+        assert json.loads(run("list", "--json")) == []
+        run("add", str(repo))
+        assert "Source: discovered" in run("info", "repo")
         for shell in ("bash", "zsh", "fish", "powershell", "pwsh"):
             assert "pcd" in run("shell", "init", shell)
         if sys.platform == "win32":

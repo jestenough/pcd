@@ -28,6 +28,25 @@ The ``scan.hidden``, ``scan.follow_symlinks``, and ``scan.exclude`` settings
 control scanning. ``scan.exclude`` contains directory names, not project paths
 or glob patterns.
 
+Project exclusions
+------------------
+
+``pcd remove`` records a discovered project's canonical path in the top-level
+``excluded_projects`` array in ``config.toml``. An omitted array defaults to empty.
+Entries name individual project directories. A manual registration and an exclusion
+for the same canonical path are rejected. ``scan.exclude`` continues to control
+which directory names the scanner skips. An example before any table header::
+
+    excluded_projects = ["~/development/archive/old-checkout"]
+
+Use ``pcd add PATH`` to restore an excluded directory. Missing entries are kept
+so a returning disk or checkout still respects the exclusion. After editing the file manually, run ``pcd config validate``
+and ``pcd refresh``.
+
+Earlier releases reject the new TOML key. Before downgrading, back up the
+configuration, remove ``excluded_projects`` from the older version's copy, and
+run ``pcd refresh``. That version will discover those projects again.
+
 Storage and upgrades
 --------------------
 

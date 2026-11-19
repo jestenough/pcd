@@ -24,6 +24,7 @@ def test_defaults(projects: ProjectCatalog) -> None:
     assert settings.follow_symlinks is False
     assert "node_modules" in settings.excluded_names
     assert settings.editor is None
+    assert settings.excluded_projects == frozenset()
 
 
 def test_reads_editor_setting(projects: ProjectCatalog) -> None:
@@ -116,6 +117,10 @@ def test_reads_scan_settings(projects: ProjectCatalog) -> None:
     [
         "roots = 'bad'\n",
         "projects = 'bad'\n",
+        "excluded_projects = 'bad'\n",
+        "excluded_projects = [1]\n",
+        "excluded_projects = ['']\n",
+        'excluded_projects = ["~/repo\\u0000name"]\n',
         "[scan]\nhidden = 'yes'\n",
         "[scan]\nfollow_symlinks = 1\n",
         "[scan]\nexclude = [1]\n",
@@ -163,6 +168,7 @@ def test_duplicate_projects_rejected(projects: ProjectCatalog, tmp_path: Path) -
     [
         "roots = ['relative']\nprojects = []\n",
         "roots = []\nprojects = [{name='x', path='relative'}]\n",
+        "excluded_projects = ['relative']\n",
     ],
 )
 def test_relative_config_paths_are_rejected(projects: ProjectCatalog, text: str) -> None:
@@ -241,3 +247,53 @@ def test_unreadable_config_is_not_treated_as_missing(
             else:
                 projects.config.ensure_exists()
     assert projects.config.path.read_text(encoding="utf-8") == original
+
+
+def test_excluded_projects_use_canonical_paths_and_preserve_comments(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    path = tmp_path / "missing"
+    projects.config.path.parent.mkdir(parents=True)
+    projects.config.path.write_text("# keep exclusions\nroots = []\n", encoding="utf-8")
+
+    assert projects.config.exclude_project(path)
+    assert not projects.config.exclude_project(path / ".." / "missing")
+    assert projects.config.load().excluded_projects == frozenset({canonical_path(path)})
+    assert "# keep exclusions" in projects.config.path.read_text(encoding="utf-8")
+    assert "excluded_projects" in projects.config.effective_toml()
+
+
+def test_duplicate_excluded_projects_are_rejected(projects: ProjectCatalog, tmp_path: Path) -> None:
+    path = tmp_path / "missing"
+    projects.config.path.parent.mkdir(parents=True)
+    projects.config.path.write_text(
+        f"excluded_projects = ['{path}', '{path / '..' / 'missing'}']\n", encoding="utf-8"
+    )
+    with pytest.raises(InvalidConfigError, match="duplicate excluded"):
+        projects.config.load()
+
+
+def test_manual_and_excluded_project_overlap_is_rejected(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    path = tmp_path / "notes"
+    projects.config.path.parent.mkdir(parents=True)
+    projects.config.path.write_text(
+        f"excluded_projects = ['{path}']\nprojects = [{{name='notes', path='{path}'}}]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(InvalidConfigError, match="cannot also be excluded"):
+        projects.config.load()
+
+
+def test_restore_requires_excluded_manual_candidate(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    path = tmp_path / "notes"
+    discovered = Project("notes", canonical_path(path), path, ProjectSource.DISCOVERED)
+    manual = Project("notes", canonical_path(path), path, ProjectSource.MANUAL)
+    settings = projects.config.load()
+
+    with pytest.raises(ValueError, match="manual"):
+        projects.config.restore_project(discovered, manual=True, expected=settings)
+    assert projects.config.restore_project(manual, manual=True, expected=settings) is None

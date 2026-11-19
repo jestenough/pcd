@@ -11,8 +11,9 @@ Command reference
     pcd <project>                Jump to a project
     pcd                          Show help
 
-    pcd add [path] [--name NAME]  Register a directory (default: current directory)
-    pcd remove <project>         Remove a manual registration, keeping its directory
+    pcd add [path] [--name NAME]  Register a directory or restore an excluded project
+    pcd remove <project>         Unregister or exclude a project, keeping its directory
+    pcd info <project>           Show paths, source, discovery routes and status
 
     pcd init                     Add the current directory as a scan root
     pcd uninit                   Remove the current directory from scan roots
@@ -44,6 +45,31 @@ file, inside registered scan roots. Ordinary directories can be registered with
 Roots are scanned when registered and when the catalog must be rebuilt. A search
 from the command line with no matching cached project rescans once and retries.
 There is no background watcher; use ``pcd refresh`` to update an existing cache explicitly.
+
+Inspect, remove and restore projects
+------------------------------------
+
+Use ``pcd info NAME`` to inspect a project without changing directory or recording
+a visit. The status reflects whether its directory exists now. Both ``info`` and
+``remove`` accept an exact, case-insensitive name, complete manual and discovered
+names from the cache, and offer a picker for duplicates.
+
+For example, to hide a discovered checkout and later restore it::
+
+    pcd info pigeon-surveillance
+    pcd remove pigeon-surveillance
+    pcd refresh
+    pcd add ~/development/github/palantir/backend/pigeon-surveillance
+
+Removing a discovered checkout excludes its canonical path across all scan roots.
+Other checkouts with the same name remain available. The exclusion survives refresh
+and cache rebuilding. Removing a manual project unregisters it. Its directory remains
+on disk and can be discovered again if it is a Git checkout inside a scan root.
+
+Adding an excluded directory restores discovery when a registered root still finds
+it. Use ``--name NAME`` to restore it as a manual registration. An existing directory
+outside discovery is also restored as manual. Refresh drops vanished discoveries
+from the cache and keeps user-defined roots, manual registrations and exclusions.
 
 Search and selection
 --------------------

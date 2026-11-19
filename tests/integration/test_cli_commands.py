@@ -55,9 +55,10 @@ def test_terminal_controls_in_project_names_are_escaped(runner: CliRunner, tmp_p
     name = "repo\x1b]52;c;payload\x07\nspoof\u202e"
     added = runner.invoke(cli, ["add", str(tmp_path), "--name", name], color=True)
     listed = runner.invoke(cli, ["list"], color=True)
+    inspected = runner.invoke(cli, ["info", name], color=True)
     machine = runner.invoke(cli, ["list", "--json"])
     removed = runner.invoke(cli, ["remove", name], color=True)
-    for result in (added, listed, removed):
+    for result in (added, listed, inspected, removed):
         assert result.exit_code == 0
         assert "\x1b" not in result.stdout
         assert "\x07" not in result.stdout
@@ -158,7 +159,10 @@ def test_list_preserves_symlink_display_path(runner: CliRunner, tmp_path: Path) 
 
     listed = runner.invoke(cli, ["list"])
     listed_json = runner.invoke(cli, ["list", "--json"])
+    inspected = runner.invoke(cli, ["info", "docs"])
 
+    assert inspected.exit_code == 0
+    assert f"Path: {target}\nDisplay path: {link}\n" in inspected.output
     assert listed.exit_code == 0
     assert listed.stderr == ""
     assert listed.stdout == (
@@ -230,7 +234,7 @@ def test_uninit_non_root(runner: CliRunner) -> None:
     assert runner.invoke(cli, ["uninit"]).exit_code == 1
 
 
-def test_remove_discovered_is_rejected(
+def test_remove_discovered_survives_refresh_and_add_restores(
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -242,8 +246,64 @@ def test_remove_discovered_is_rejected(
 
     result = runner.invoke(cli, ["remove", "repo"])
 
-    assert result.exit_code == 1
-    assert "discovered automatically" in result.output
+    assert result.exit_code == 0
+    assert "Excluded project: repo" in result.output
+    assert (root / "repo/.git").is_dir()
+    assert runner.invoke(cli, ["refresh"]).exit_code == 0
+    assert runner.invoke(cli, ["info", "repo"]).exit_code == 3
+    assert runner.invoke(cli, ["add", str(root / "repo")]).exit_code == 0
+    assert runner.invoke(cli, ["refresh"]).exit_code == 0
+    info = runner.invoke(cli, ["info", "REPO"], env={"PCD_SHELL": "1"})
+    assert info.exit_code == 0
+    assert info.output.splitlines() == [
+        "Name: repo",
+        f"Path: {(root / 'repo').resolve()}",
+        "Source: discovered",
+        "Status: available",
+        f"Root: {root} -> {root / 'repo'}",
+    ]
+    assert not ProjectCatalog.create().history.path.exists()
+
+
+def test_info_missing_registered_directory(runner: CliRunner, tmp_path: Path) -> None:
+    path = tmp_path / "data"
+    path.mkdir()
+    assert runner.invoke(cli, ["add", str(path), "--name", "info"]).exit_code == 0
+    path.rmdir()
+    assert runner.invoke(cli, ["refresh"]).exit_code == 0
+    result = runner.invoke(cli, ["info", "info"])
+    assert result.exit_code == 0
+    assert "Source: manual\nStatus: missing" in result.output
+    assert runner.invoke(cli, ["info", "inf"]).exit_code == 3
+
+
+@pytest.mark.parametrize("command", ["info", "remove"])
+def test_inspection_and_removal_complete_both_sources(
+    command: str, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    (root / "app-scanned/.git").mkdir(parents=True)
+    monkeypatch.chdir(root)
+    assert runner.invoke(cli, ["init"]).exit_code == 0
+    assert runner.invoke(cli, ["add", str(tmp_path), "--name", "app-manual"]).exit_code == 0
+
+    def completions() -> list[str]:
+        result = runner.invoke(
+            cli,
+            [],
+            prog_name="pcd",
+            env={
+                "_PCD_COMPLETE": "bash_complete",
+                "COMP_WORDS": f"pcd {command} app",
+                "COMP_CWORD": "2",
+            },
+        )
+        assert result.exit_code == 0
+        return result.output.splitlines()
+
+    assert completions() == ["plain,app-manual", "plain,app-scanned"]
+    assert runner.invoke(cli, ["remove", "app-scanned"]).exit_code == 0
+    assert completions() == ["plain,app-manual"]
 
 
 def test_remove_missing_project(runner: CliRunner) -> None:
@@ -253,7 +313,9 @@ def test_remove_missing_project(runner: CliRunner) -> None:
     assert "Project not found: missing" in result.output
 
 
-def test_remove_cancelled_selection(
+@pytest.mark.parametrize("command", ["remove", "info"])
+def test_cancelled_project_selection(
+    command: str,
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -265,7 +327,7 @@ def test_remove_cancelled_selection(
 
     monkeypatch.setattr(projects_module, "select_project", lambda *_args, **_kwargs: None)
 
-    result = runner.invoke(cli, ["remove", "same"])
+    result = runner.invoke(cli, [command, "same"])
 
     assert result.exit_code == 0
     assert len(ProjectCatalog.create().config.load().manual_projects) == 2
@@ -279,7 +341,7 @@ def test_remove_handles_disappeared_registration(
     path = tmp_path / "repo"
     path.mkdir()
     assert runner.invoke(cli, ["add", str(path)]).exit_code == 0
-    monkeypatch.setattr(ProjectCatalog, "remove_project", lambda _catalog, _path: False)
+    monkeypatch.setattr(ProjectCatalog, "remove_selected_project", lambda _catalog, _project: False)
 
     result = runner.invoke(cli, ["remove", "repo"])
 

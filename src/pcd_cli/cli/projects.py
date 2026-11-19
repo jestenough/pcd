@@ -24,6 +24,10 @@ class ProjectStatus(StrEnum):
     AVAILABLE = "available"
     MISSING = "missing"
 
+    @classmethod
+    def for_path(cls, path: Path) -> ProjectStatus:
+        return cls.AVAILABLE if path.is_dir() else cls.MISSING
+
 
 class ProjectListRow(NamedTuple):
     name: str
@@ -37,7 +41,7 @@ class ProjectListRow(NamedTuple):
             name=terminal_text(project.name),
             path=format_path(project.display_path),
             source=cls._source_label(project.source),
-            status=cls._status_label(project.path),
+            status=ProjectStatus.for_path(project.path),
         )
 
     @staticmethod
@@ -49,13 +53,6 @@ class ProjectListRow(NamedTuple):
                 return "manual"
             case _:
                 assert_never(source)
-
-    @staticmethod
-    def _status_label(path: Path) -> ProjectStatus:
-        if path.is_dir():
-            return ProjectStatus.AVAILABLE
-        else:
-            return ProjectStatus.MISSING
 
 
 class ProjectListTable:
@@ -105,7 +102,7 @@ def project(catalog: ProjectCatalog, query: str) -> None:
 @click.option("--name", help="Custom name for a manual project.")
 @click.pass_obj
 def add(catalog: ProjectCatalog, path: Path | None, name: str | None) -> None:
-    """Register PATH (or the current directory) as a manual project."""
+    """Register PATH (default: current directory), or restore an excluded project."""
     if path is None:
         location = Path.cwd()
     else:
@@ -129,8 +126,12 @@ def add(catalog: ProjectCatalog, path: Path | None, name: str | None) -> None:
         display_path=location,
         source=ProjectSource.MANUAL,
     )
-    if catalog.add_project(item):
-        click.echo(f"Added project: {terminal_text(item.name)} -> {format_path(item.display_path)}")
+    if catalog.add_project(item, explicit_name=name is not None):
+        # A restored checkout may be discovered under a different symlink name.
+        destination = format_path(item.display_path)
+        if name is not None:
+            destination = f"{terminal_text(item.name)} -> {destination}"
+        click.echo(f"Added project: {destination}")
         return
 
     click.echo(
@@ -145,30 +146,43 @@ def add(catalog: ProjectCatalog, path: Path | None, name: str | None) -> None:
 )
 @click.pass_obj
 def remove(catalog: ProjectCatalog, query: str) -> None:
-    """Remove a manual project registration."""
+    """Unregister a manual project or exclude a discovered one. Keep its directory."""
+    selected = _select_named_project(catalog, query)
+    if selected is None:
+        return
+    if catalog.remove_selected_project(selected):
+        action = "Excluded" if selected.source is ProjectSource.DISCOVERED else "Removed"
+        click.echo(f"{action} project: {terminal_text(selected.name)}")
+        return
+    click.echo("Project is no longer registered.", err=True)
+    raise click.exceptions.Exit(ExitCode.ERROR)
+
+
+def _select_named_project(catalog: ProjectCatalog, query: str) -> Project | None:
     result = catalog.resolve(query, exact_only=True)
-    matches = result.matches
-    if not matches:
+    if not result.matches:
         click.echo(f"Project not found: {terminal_text(query)}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
+    return select_project(catalog, result, query, exact_only=True)
 
-    selected = select_project(catalog, result, query, exact_only=True)
+
+@click.command()
+@click.argument("query", shell_complete=lambda _ctx, _param, value: project_completions(value))
+@click.pass_obj
+def info(catalog: ProjectCatalog, query: str) -> None:
+    """Show a project's paths, source, discovery routes and current status."""
+    selected = _select_named_project(catalog, query)
     if selected is None:
         return
 
-    if selected.source is ProjectSource.DISCOVERED:
-        click.echo(
-            f"{terminal_text(selected.name)} is discovered automatically and cannot be removed with pcd remove.",
-            err=True,
-        )
-        raise click.exceptions.Exit(ExitCode.ERROR)
-
-    if catalog.remove_project(selected.path):
-        click.echo(f"Removed project: {terminal_text(selected.name)}")
-        return
-
-    click.echo("Project is no longer registered.", err=True)
-    raise click.exceptions.Exit(ExitCode.ERROR)
+    click.echo(f"Name: {terminal_text(selected.name)}")
+    click.echo(f"Path: {terminal_text(str(selected.path))}")
+    if selected.display_path != selected.path:
+        click.echo(f"Display path: {terminal_text(str(selected.display_path))}")
+    click.echo(f"Source: {selected.source.value}")
+    click.echo(f"Status: {ProjectStatus.for_path(selected.path)}")
+    for route in selected.discoveries:
+        click.echo(f"Root: {format_path(route.root)} -> {format_path(route.display_path)}")
 
 
 @click.command("list")
@@ -218,4 +232,4 @@ def list_projects(
     click.echo(table.render())
 
 
-project_commands = (project, add, remove, list_projects)
+project_commands = (project, add, remove, info, list_projects)

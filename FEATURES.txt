@@ -82,17 +82,21 @@ PROJECT DISCOVERY
     Missing roots are still skipped and handled as unavailable locations.
 
 
-MANUAL PROJECTS
+PROJECT REGISTRATION AND INSPECTION
 
     Register an existing directory manually, optionally with a custom name:
         pcd add [path] [--name <name>]
     Omitting path registers the current directory. A .git marker is not required.
     A path already known through a root or manual registration is not added again.
 
-    Remove a manually registered project:
+    Unregister a manual project or exclude a discovered checkout:
         pcd remove <project>
-    The directory is never deleted. Automatically discovered projects cannot yet
-    be removed by this command; project exclusions are planned in ROADMAP.txt.
+    Files stay on disk. Exclusions in config.toml apply to the canonical project
+    across discovery routes and survive refresh. Add the path to restore it.
+
+    Inspect metadata, availability and discovery routes for an exact name:
+        pcd info <project>
+    Both info and remove offer completion and duplicate-name selection.
 
 
 PROJECT LIST
@@ -140,8 +144,9 @@ USAGE HISTORY
 
 DATA DURABILITY
 
-    Configuration, project cache, usage history, and managed shell files are
-    published with atomic replacement.
+    Configuration, usage history, and managed shell files use atomic replacement.
+    SQLite publishes catalog refreshes in a transaction. Cache creation and
+    recovery publish a complete replacement database.
 
     On Linux and macOS, the containing directory is synchronized after a successful
     replacement so the new directory entry survives a crash as far as the filesystem

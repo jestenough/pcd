@@ -135,7 +135,7 @@ class ProjectCatalog:
         known_paths = {project.path for project in projects}
 
         for project in ProjectScanner(settings).scan():
-            if project.path in known_paths:
+            if project.path in known_paths or project.path in settings.excluded_projects:
                 continue
 
             known_paths.add(project.path)
@@ -164,10 +164,12 @@ class ProjectCatalog:
 
         return True
 
-    def add_project(self, project: Project) -> bool:
+    def add_project(self, project: Project, *, explicit_name: bool = False) -> bool:
         # An authoritative scan prevents stale cache data from hiding a repository.
         started_at_ns = time.time_ns()
         settings = self.config.load()
+        if project.path in settings.excluded_projects:
+            return self._restore_project(project, settings, explicit_name=explicit_name)
         projects = self._build_projects(settings)
 
         if any(item.path == project.path for item in projects):
@@ -190,12 +192,48 @@ class ProjectCatalog:
 
         return True
 
+    def _restore_project(
+        self, project: Project, settings: ProjectSettings, *, explicit_name: bool
+    ) -> bool:
+        while True:
+            started_at_ns = time.time_ns()
+            restored = replace(
+                settings, excluded_projects=settings.excluded_projects - {project.path}
+            )
+            projects = self._build_projects(restored)
+            manual = explicit_name or not any(item.path == project.path for item in projects)
+            if manual:
+                restored = replace(restored, manual_projects=(*restored.manual_projects, project))
+                projects = [item for item in projects if item.path != project.path]
+                projects.append(project)
+                projects.sort(key=lambda item: (item.name.casefold(), str(item.path)))
+            committed = self.config.restore_project(project, manual=manual, expected=settings)
+            if committed is not None:
+                if committed != restored or not self.cache.save(
+                    projects, started_at_ns=started_at_ns
+                ):
+                    self.refresh()
+                return True
+            latest = self.config.load()
+            if latest == settings or project.path not in latest.excluded_projects:
+                return False
+            settings = latest
+
     def remove_project(self, path: Path) -> bool:
         if not self.config.remove_project(path):
             return False
 
         self.refresh()
 
+        return True
+
+    def remove_selected_project(self, project: Project) -> bool:
+        """Deregister a manual selection or persistently exclude a discovered one."""
+        if project.source is ProjectSource.MANUAL:
+            return self.remove_project(project.path)
+        if not self.config.exclude_project(project.path):
+            return False
+        self.refresh()
         return True
 
     def find_parent_root(self, path: Path) -> Path | None:
