@@ -1,38 +1,19 @@
 PCD ROADMAP
 ===========
 
-Current release: 0.2.7. Next patch release: 0.2.8. Next feature release: 0.3.0.
+Current release: 0.2.8.
 Work through planned releases in the order below. Within each release, follow the listed order.
-Versions after 0.3.0 are planning targets, not fixed delivery dates.
+Future version numbers are planning targets.
 Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
 
 
-0.3.0 - PROJECT STORAGE AND RESOLUTION
---------------------------------------
+OUTSTANDING PLATFORM CHECKS
+---------------------------
 
-    Design and validate the storage migration independently of aliases.
-    Compare SQLite with indexed-file alternatives; plan migration, recovery, and compatibility
-    before choosing a format.
-    Complete the resolve contract: one storage-agnostic lookup, refresh/retry in the
-    resolver, and a picker that displays a bounded result set and re-resolves edited
-    queries. Preserve exact duplicates, fuzzy ranking, manual registrations, and
-    cache-only completion. Remove the fuzzy fallback's second JSONL pass without
-    regressing exact lookup. Compare startup, refresh, time, disk, and memory on all
-    supported platforms before replacing JSONL; do not mix migration with aliases.
-
-
-0.3.1 - PROJECT INSPECTION AND EXCLUSIONS
-----------------------------------------
-
-    1. Add `pcd info <project>` with metadata and status.
-       Add appropriate project completion with the command.
-    2. Extend `pcd remove <project>` to manual and discovered projects without deleting directories.
-       Unregister manual projects and persist discovered project paths as exclusions.
-       Let `pcd add <path>` restore excluded projects and complete all removable projects.
-    3. Add `pcd doctor`.
-       Check configuration, cache, roots, missing projects, PATH, and detectable shell integration.
-    4. Document and test refresh behavior with exclusions and unavailable projects.
-       Preserve user configuration and report stale references rather than deleting them silently.
+    Run the test suite and storage and CLI comparisons on macOS. Compare startup,
+    exact navigation, refresh, disk usage and memory with the Linux and Windows results.
+    Run the Windows symlink tests on a runner that permits symlink creation.
+    See docs/storage-030.rst for the measurements and acceptance criteria.
 
 
 0.4.0 - PROJECT ALIASES
