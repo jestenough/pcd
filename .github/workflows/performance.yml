@@ -43,3 +43,9 @@ jobs:
         with:
           name: cli-performance-${{ matrix.os }}
           path: cli-comparison.json
+      - name: Compare storage candidates
+        run: python benchmarks/storage_candidates.py --output storage-comparison.json
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: storage-performance-${{ matrix.os }}
+          path: storage-comparison.json

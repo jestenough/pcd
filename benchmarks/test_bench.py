@@ -10,9 +10,11 @@ from unittest.mock import patch
 
 from pcd_cli import filesystem
 from pcd_cli.cache import ProjectCache
+from pcd_cli.lookup import LookupRequest
 from pcd_cli.models import Project, ProjectSettings, ProjectSource
 from pcd_cli.scanner import ProjectScanner
 from pcd_cli.search import rank_matches
+from pcd_cli.storage import SQLiteProjectStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -143,3 +145,35 @@ def test_scan() -> None:
     assert len(found) == 250
     assert scan_time < 1.0
     print(f"scan 250 repos: {scan_time * 1_000:.2f} ms")
+
+
+def test_sqlite_lookup_boundaries() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        cache = SQLiteProjectStore(Path(directory) / "projects.sqlite3")
+        cache.save(projects(100_000))
+        exact = LookupRequest("project-099999")
+        fuzzy = LookupRequest("project")
+        exact_time = elapsed(lambda: cache.lookup(exact), repeats=3)
+        fuzzy_time = elapsed(lambda: cache.lookup(fuzzy), repeats=3)
+        gc.collect()
+        tracemalloc.start()
+        result = cache.lookup(fuzzy)
+        peak = tracemalloc.get_traced_memory()[1]
+        gc.collect()
+        before = tracemalloc.take_snapshot()
+        for _ in range(500):
+            cache.lookup(exact)
+        gc.collect()
+        after = tracemalloc.take_snapshot()
+        growth = sum(
+            item.size_diff for item in after.compare_to(before, "lineno") if item.size_diff > 0
+        )
+        tracemalloc.stop()
+    assert result is not None and result.total == 100_000 and len(result.matches) == 100
+    assert exact_time < 1.0
+    assert peak < 2 * 1024 * 1024
+    assert growth < 256 * 1024
+    print(f"SQLite exact 100k: {exact_time * 1000:.2f} ms; fuzzy: {fuzzy_time * 1000:.2f} ms")
+    print(
+        f"SQLite fuzzy peak: {peak / 1024:.2f} KiB; retained after 500 lookups: {growth / 1024:.2f} KiB"
+    )

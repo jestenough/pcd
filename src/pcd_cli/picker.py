@@ -14,19 +14,19 @@ from prompt_toolkit.layout.processors import BeforeInput
 
 from pcd_cli.display import terminal_text
 from pcd_cli.filesystem import format_path
-from pcd_cli.search import rank_matches, rank_recent
+from pcd_cli.lookup import LookupMode, LookupRequest
 from pcd_cli.terminal import terminal_output
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-    from pathlib import Path
+    from collections.abc import Callable
 
     from prompt_toolkit.formatted_text import StyleAndTextTuples
     from prompt_toolkit.input.base import Input
     from prompt_toolkit.key_binding import KeyPressEvent
     from prompt_toolkit.output import Output
 
-    from pcd_cli.models import Project, ProjectUsage
+    from pcd_cli.lookup import LookupResult
+    from pcd_cli.models import Project
 
 
 PAGE_SIZE = 12
@@ -36,20 +36,20 @@ PAGE_SIZE = 12
 class ProjectPicker:
     """Project-specific interactive picker built on prompt-toolkit primitives."""
 
-    projects: Sequence[Project]
-    usage: Mapping[Path, ProjectUsage]
+    result: LookupResult
+    resolve: Callable[[LookupRequest], LookupResult]
     query: str = ""
+    mode: LookupMode = LookupMode.RESOLVE
     input_stream: Input | None = None
     output: Output | None = None
-    # The supplied projects are already ordered for the non-empty initial query.
-    ranked: bool = False
-
     matches: list[Project] = field(default_factory=list, init=False)
     selected_index: int = field(default=0, init=False)
     application: Application[Project | None] | None = field(default=None, init=False)
 
+    def __post_init__(self) -> None:
+        self.matches = self.result.matches
+
     def run(self) -> Project | None:
-        self.matches = self._matching_projects(self.query)
         self.selected_index = 0
         buffer = Buffer(
             document=Document(self.query, cursor_position=len(self.query)),
@@ -85,16 +85,10 @@ class ProjectPicker:
             finally:
                 self.application = None
 
-    def _matching_projects(self, query: str) -> list[Project]:
-        if self.ranked and query and query == self.query:
-            return list(self.projects)
-        if query:
-            return rank_matches(self.projects, query, self.usage)
-        return rank_recent(self.projects, self.usage)
-
     def _filter(self, buffer: Buffer) -> None:
         selected_path = self.matches[self.selected_index].path if self.matches else None
-        self.matches = self._matching_projects(buffer.text)
+        self.query = buffer.text
+        self._resolve(LookupRequest(self.query, self._lookup_mode))
         selected_index = next(
             (index for index, project in enumerate(self.matches) if project.path == selected_path),
             None,
@@ -111,10 +105,38 @@ class ProjectPicker:
         self._move(event, 1)
 
     def _move(self, event: KeyPressEvent, step: int) -> None:
-        self.selected_index = (
-            (self.selected_index + step) % len(self.matches) if self.matches else 0
-        )
+        target = self.selected_index + step
+        if self.matches and not 0 <= target < len(self.matches):
+            if step > 0:
+                after = (
+                    self.result.last_rank
+                    if self.result.offset + len(self.matches) < self.result.total
+                    else None
+                )
+                request = LookupRequest(self.query, self._lookup_mode, after=after)
+            elif self.result.offset:
+                request = LookupRequest(
+                    self.query, self._lookup_mode, before=self.result.first_rank
+                )
+            else:
+                request = LookupRequest(self.query, self._lookup_mode, last=True)
+            generation = self.result.generation
+            self._resolve(request)
+            if self.result.generation != generation:
+                self._resolve(LookupRequest(self.query, self._lookup_mode))
+                target = 0
+            else:
+                target = 0 if step > 0 else len(self.matches) - 1
+        self.selected_index = max(0, target) if self.matches else 0
         event.app.invalidate()
+
+    @property
+    def _lookup_mode(self) -> LookupMode:
+        return self.mode if self.query else LookupMode.RESOLVE
+
+    def _resolve(self, request: LookupRequest) -> None:
+        self.result = self.resolve(request)
+        self.matches = self.result.matches
 
     def _select(self, event: KeyPressEvent) -> None:
         selected = self.matches[self.selected_index] if self.matches else None
@@ -147,7 +169,9 @@ class ProjectPicker:
                 )
             )
 
-        if len(self.matches) > PAGE_SIZE:
-            lines.append(("dim", f"\n{self.selected_index + 1}/{len(self.matches)}\n"))
+        if self.result.total > PAGE_SIZE:
+            lines.append(
+                ("dim", f"\n{self.result.offset + self.selected_index + 1}/{self.result.total}\n")
+            )
 
         return lines

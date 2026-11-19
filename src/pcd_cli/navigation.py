@@ -16,10 +16,8 @@ from pcd_cli.integrations.shell import (
 from pcd_cli.models import ExitCode, ProjectSource
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-    from pathlib import Path
-
-    from pcd_cli.models import Project, ProjectUsage
+    from pcd_cli.lookup import LookupRequest, LookupResult
+    from pcd_cli.models import Project
 
 
 def navigate_to_project(
@@ -27,44 +25,37 @@ def navigate_to_project(
     query: str | None = None,
     exact_only: bool = False,
 ) -> None:
-    result = None if query is None else catalog.resolve(query, exact_only=exact_only)
-    matches = catalog.projects() if result is None else result.matches
-    if not matches:
+    result = catalog.resolve(query or "", exact_only=exact_only)
+    if not result.matches:
         suffix = "" if query is None else f": {terminal_text(query)}"
         click.echo(f"Project not found{suffix}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
-    selected = select_project(
-        catalog,
-        matches,
-        query or "",
-        usage=None if result is None else result.usage,
-        ranked=result is not None,
-    )
+    selected = select_project(catalog, result, query or "", exact_only=exact_only)
     if selected is not None:
         _open_project(catalog, selected)
 
 
 def select_project(
     catalog: ProjectCatalog,
-    projects: Sequence[Project],
+    result: LookupResult,
     query: str = "",
     *,
-    usage: Mapping[Path, ProjectUsage] | None = None,
-    ranked: bool = False,
+    exact_only: bool = False,
 ) -> Project | None:
-    if len(projects) == 1:
-        return projects[0]
-    else:
-        # Import lazily so shell completion never initializes terminal UI machinery.
-        from pcd_cli.picker import ProjectPicker
+    if result.total == 1:
+        return result.matches[0]
+    # Import lazily so completion never initializes terminal UI machinery.
+    from pcd_cli.lookup import LookupMode
+    from pcd_cli.picker import ProjectPicker
 
-        return ProjectPicker(
-            projects,
-            catalog.history.load() if usage is None else usage,
-            query,
-            ranked=ranked,
-        ).run()
+    usage = catalog.history.load() if result.usage is None else result.usage
+
+    def resolve(request: LookupRequest) -> LookupResult:
+        return catalog.lookup(request, refresh_on_miss=False, usage=usage)
+
+    mode = LookupMode.EXACT if exact_only else LookupMode.RESOLVE
+    return ProjectPicker(result, resolve, query, mode=mode).run()
 
 
 def project_completions(value: str) -> list[CompletionItem]:

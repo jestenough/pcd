@@ -2,8 +2,8 @@ Performance and safety audit
 ============================
 
 Measured on Windows with Python 3.15.2 on 2026-11-17. Baseline: ``ba1bd94``
-(0.2.8). Candidate: the uncommitted source snapshot whose core-profiler SHA-256
-starts with ``38b95aff9e87``. These are local, warm-filesystem measurements,
+(0.2.8). Audit candidate: the source snapshot later committed as ``925793c``,
+whose core-profiler SHA-256 starts with ``38b95aff9e87``. These are local, warm-filesystem measurements,
 not cross-platform guarantees.
 
 Measurements
@@ -57,7 +57,8 @@ history and 250-repository trees. A final seven-sample check at 10,000 projects
 put completion at 482.4 -> 484.2 ms with empty history and 481.1 -> 482.2 ms with
 2,048 history entries. Startup stayed around 250 ms. Component improvements do
 not imply the same speedup for an entire CLI invocation. Exact/prefix cache
-lookups remain linear JSONL reads; storage migration is a separate roadmap item.
+lookups in that audit revision remained linear JSONL reads. The separate 0.3.0
+storage candidate is described in `storage-030.rst <storage-030.rst>`_.
 
 Safety and cleanup
 ------------------

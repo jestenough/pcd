@@ -12,6 +12,7 @@ from pcd_cli.cli import cli
 from pcd_cli.filesystem import ApplicationPaths, canonical_path
 from pcd_cli.history import UsageHistory
 from pcd_cli.integrations.shell import ConfiguredShell, inactive_shell_message, Shell
+from pcd_cli.lookup import LookupResult
 from pcd_cli.models import Project, ProjectSource
 from pcd_cli.navigation import select_project
 from pcd_cli.picker import ProjectPicker
@@ -85,7 +86,7 @@ def test_duplicate_name_uses_choice(
     monkeypatch.setattr(
         navigation_module,
         "select_project",
-        lambda _app, projects, _query="", **_kwargs: projects[1],
+        lambda _app, result, _query="", **_kwargs: result.matches[1],
     )
     result = runner.invoke(cli, ["same"])
 
@@ -104,7 +105,7 @@ def test_select_project_opens_picker_for_multiple_matches(
     )
     monkeypatch.setattr(ProjectPicker, "run", lambda _picker: matches[1])
 
-    assert select_project(projects, matches, "") is matches[1]
+    assert select_project(projects, LookupResult(list(matches), len(matches)), "") is matches[1]
 
 
 @pytest.mark.parametrize("query", ["same", "sam"])
@@ -128,9 +129,8 @@ def test_navigation_reuses_search_history_in_picker(
         return original_load(history)
 
     def run(picker: ProjectPicker) -> Project:
-        assert picker.ranked
-        assert picker.usage == {}
-        return picker.projects[0]
+        assert picker.result.usage == {}
+        return picker.matches[0]
 
     monkeypatch.setattr(UsageHistory, "load", load)
     monkeypatch.setattr(UsageHistory, "record", lambda _history, _path: None)

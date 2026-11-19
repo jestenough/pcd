@@ -64,6 +64,7 @@ DOCUMENTATION
     docs/windows.rst           Execution Policy and Application Control errors
     docs/troubleshooting.rst   Other shell startup problems on Linux/macOS/Windows
     docs/configuration.rst     Configuration, editor, and scan settings
+    docs/storage-030.rst       Cache migration, recovery, and compatibility
     docs/development.rst       Development, checks, builds, and benchmarks
 
 Browse online: https://github.com/jestenough/pcd/tree/master/docs

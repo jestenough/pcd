@@ -68,7 +68,8 @@ measure terminal rendering or typing latency. Completion invokes Click's protoco
 not a real shell wrapper. Filesystem caches are warm; this is not a cold-disk test.
 
 Memory is measured in separate processes: Python allocation peaks with
-`-X tracemalloc`, and peak process RSS without tracing overhead.
+`-X tracemalloc`, and peak process RSS without tracing overhead. Linux reads the worker process's
+VmHWM from /proc/self/status to exclude peak memory inherited from the fixture builder.
 
 JSON contains raw timing samples, medians, p90, memory observations, interpreter,
 platform, baseline commit, and a hash of the candidate Python source. Memory is
@@ -80,13 +81,42 @@ Do not infer a platform-wide guarantee from one local run.
 For local runs, use `--output benchmarks/baselines/<name>.json` to keep
 machine-specific results outside version control. Re-run with `--sizes` and
 `--tree-sizes` for targeted measurements; the default matrix is larger.
-Review each platform's CI artifact for shell wrapper coverage and
-platform-specific results.
+Use ``--operations startup exact-first exact-last completion`` to rerun only
+those operations; default CI still runs the full matrix. An empty ``--tree-sizes``
+argument skips scan fixtures during lookup-only comparisons. The selected
+operations are recorded in JSON. Review each platform's CI artifact for shell
+wrapper coverage and platform-specific results.
 
 The `CLI baseline comparison` workflow runs the same matrix on Linux, macOS
 and Windows for relevant pull requests, and accepts a baseline revision for
 manual runs. Download its three artifacts before marking cross-platform
 performance validation complete.
+
+## Storage format comparison
+
+```sh
+poetry run python benchmarks/storage_candidates.py --output benchmarks/baselines/storage.json
+```
+
+Compare the legacy JSONL resolver and the production SQLite store at 1k/10k/100k
+projects. The harness checks equivalent results before timing, including Unicode
+prefix edges. SQLite reads metadata for ranking and decodes the selected window.
+JSONL retains its old exact-first, full-decode fallback. Its output is capped
+after sorting for comparison.
+
+Each lookup has a warm-up and five fresh-process timing samples, rotating format
+order. Separate processes measure Python allocation peaks and peak RSS. Startup,
+open, exact, completion prefix, selective fuzzy and broad fuzzy are included.
+Build time is a single observation with file fsync; disk includes persistent side
+files. This benchmark does not include directory scanning; the CLI comparison
+measures complete refresh and manual-add scenarios. Results record source hashes,
+Python/SQLite versions, platform and raw samples. This is warm-cache measurement,
+not cold-disk latency. Do not run tests or other benchmarks concurrently.
+
+The performance workflow uploads this comparison on Linux, macOS and Windows.
+Review all three reports before releasing the storage replacement. Local numbers
+and migration details belong in `docs/storage-030.rst`; raw machine-specific JSON
+stays under the ignored `benchmarks/baselines` directory.
 
 ## Performance limits and atomic-write cost
 
@@ -98,7 +128,9 @@ poetry run pytest benchmarks -q -s
 
 `make bench` runs the same command. `benchmarks/test_bench.py` checks cache lookup
 and load at 100,000 projects, fuzzy search at 10,000 projects, retained allocations
-after repeated searches, and scanning 250 repositories. The limits are encoded in
+after repeated searches, and scanning 250 repositories. The SQLite check
+uses 100,000 projects, requires a 100-result window and a Python allocation peak
+below 2 MiB, and verifies retained allocations after 500 exact lookups. The limits are encoded in
 the tests and run in the Linux `Performance limits` CI job. Ordinary `pytest`
 collects `tests/` only, so it does not run these benchmarks.
 

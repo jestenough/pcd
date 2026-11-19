@@ -44,6 +44,14 @@ def peak_rss() -> int:
             raise ctypes.WinError(ctypes.get_last_error())
         return int(counters.peak)
 
+    elif sys.platform.startswith("linux"):
+        # ru_maxrss can include the benchmark parent's peak across fork/exec.
+        # VmHWM belongs to this process image, including its startup.
+        for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) * 1024
+        raise RuntimeError("Linux did not report a process peak RSS in /proc/self/status")
+
     else:
         import resource
 
@@ -90,7 +98,7 @@ def prepare(size: int, history_size: int) -> None:
                 "config_path": str(catalog.config.path),
                 "cache_bytes": sum(
                     path.stat().st_size
-                    for path in catalog.cache.path.parent.glob("projects.jsonl*")
+                    for path in catalog.cache.path.parent.glob(catalog.cache.path.name + "*")
                 ),
             }
         )
@@ -144,7 +152,9 @@ def run_cli() -> None:
 
         # Exercise the same initial ranking as run(), without waiting for a human.
         def select(self: ProjectPicker) -> None:
-            self._matching_projects(self.query)
+            rank = getattr(self, "_matching_projects", None)
+            if rank is not None:  # Pre-0.3.0 picker ranks its input in run().
+                rank(self.query)
             return None
 
         ProjectPicker.run = select  # type: ignore[method-assign]

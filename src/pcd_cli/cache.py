@@ -44,6 +44,21 @@ class ProjectCache:
 
     path: Path
 
+    def snapshot(self) -> tuple[int, list[Project]] | None:
+        """Read a legacy generation and its records from the same open file."""
+        try:
+            with self.path.open(encoding="utf-8") as stream:
+                header = _decode_header(_read_json(stream.readline()))
+                projects = []
+                for line in stream:
+                    entry = _read_json(line)
+                    if not _is_cache_entry(entry):
+                        raise _CacheReadError("Invalid cache entry")
+                    projects.append(_decode_project(entry))
+                return header["refresh_started_ns"], projects
+        except (_CacheReadError, OSError, UnicodeError):
+            return None
+
     def load(self) -> list[Project] | None:
         if not self.path.is_file():
             return None

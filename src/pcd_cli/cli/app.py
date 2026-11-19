@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from importlib import metadata
 from typing import TYPE_CHECKING
 
 import click
@@ -52,6 +51,8 @@ class ProjectCommandGroup(click.Group):
 
 
 def package_version() -> str:
+    from importlib import metadata
+
     try:
         return metadata.version("pcd-cli")
     except metadata.PackageNotFoundError:
@@ -65,7 +66,9 @@ def package_version() -> str:
     shell_complete=lambda _ctx, _param, value: project_completions(value),
     help="Resolve a project whose name is reserved by a command.",
 )
-@click.version_option(version=package_version())
+@click.custom_version_option(
+    lambda ctx: f"{ctx.find_root().info_name}, version {package_version()}"
+)
 @click.pass_context
 def cli(ctx: click.Context, project_name: str | None) -> None:
     """Jump to local projects by name."""

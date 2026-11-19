@@ -152,7 +152,7 @@ def remove(catalog: ProjectCatalog, query: str) -> None:
         click.echo(f"Project not found: {terminal_text(query)}", err=True)
         raise click.exceptions.Exit(ExitCode.NOT_FOUND)
 
-    selected = select_project(catalog, matches, query, usage=result.usage, ranked=True)
+    selected = select_project(catalog, result, query, exact_only=True)
     if selected is None:
         return
 

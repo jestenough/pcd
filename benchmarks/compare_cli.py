@@ -194,7 +194,12 @@ def wrapper_shim(home: Path) -> None:
 
 
 def compare(
-    baseline: str, sizes: list[int], tree_sizes: list[int], repeats: int, output: Path
+    baseline: str,
+    sizes: list[int],
+    tree_sizes: list[int],
+    repeats: int,
+    output: Path,
+    operations_filter: frozenset[str] | None = None,
 ) -> None:
     revision = subprocess.check_output(["git", "rev-parse", baseline], cwd=ROOT, text=True).strip()
     archive = subprocess.check_output(["git", "archive", revision, "src"], cwd=ROOT)
@@ -274,6 +279,8 @@ def compare(
                         Operation("bash-wrapper", ("project-000000",), kind="wrapper")
                     )
                 for operation in operations:
+                    if operations_filter is not None and operation.name not in operations_filter:
+                        continue
                     results.extend(
                         measure(
                             operation,
@@ -315,6 +322,8 @@ def compare(
                     Operation("exact-miss", ("missing",), 3),
                     Operation("add", ("add", "add-target")),
                 ):
+                    if operations_filter is not None and operation.name not in operations_filter:
+                        continue
                     results.extend(
                         measure(
                             operation,
@@ -338,6 +347,7 @@ def compare(
                 "repeats": repeats,
                 "shell_wrapper": "bash" if bash else "unavailable",
                 "tree_sizes": tree_sizes,
+                "operations": None if operations_filter is None else sorted(operations_filter),
                 "results": results,
             },
             indent=2,
@@ -350,10 +360,36 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", default="master")
     parser.add_argument("--sizes", nargs="+", type=int, default=[0, 1000, 10000, 100000])
-    parser.add_argument("--tree-sizes", nargs="+", type=int, default=[250, 2000])
+    parser.add_argument("--tree-sizes", nargs="*", type=int, default=[250, 2000])
+    parser.add_argument(
+        "--operations",
+        nargs="+",
+        choices=(
+            "startup",
+            "exact-first",
+            "exact-last",
+            "fuzzy-broad",
+            "fuzzy-selective",
+            "completion",
+            "missing",
+            "history-load",
+            "history-record",
+            "bash-wrapper",
+            "refresh",
+            "exact-miss",
+            "add",
+        ),
+    )
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--output", type=Path, default=Path("cli-comparison.json"))
     options = parser.parse_args()
     if options.repeats < 1 or any(size < 0 for size in (*options.sizes, *options.tree_sizes)):
         parser.error("sizes must be nonnegative and repeats must be positive")
-    compare(options.baseline, options.sizes, options.tree_sizes, options.repeats, options.output)
+    compare(
+        options.baseline,
+        options.sizes,
+        options.tree_sizes,
+        options.repeats,
+        options.output,
+        None if options.operations is None else frozenset(options.operations),
+    )

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import tracemalloc
+from importlib.util import find_spec
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,7 +25,6 @@ if TYPE_CHECKING:
 
 def operations(home: Path, size: int, root_count: int) -> dict[str, Callable[[], object]]:
     # Import after selecting the source tree so both revisions use identical fixtures.
-    from pcd_cli.cache import ProjectCache
     from pcd_cli.cli.roots import RootListTable
     from pcd_cli.config import Config
     from pcd_cli.history import UsageHistory
@@ -57,8 +57,32 @@ def operations(home: Path, size: int, root_count: int) -> dict[str, Callable[[],
         return projects
 
     counted = list(project_discoveries().values())
-    cache = ProjectCache(home / "projects.jsonl")
-    cache.save(counted)
+    if find_spec("pcd_cli.storage") is None:
+        # Support profiling the released JSONL implementation with --source.
+        from pcd_cli.cache import ProjectCache
+
+        legacy = ProjectCache(home / "projects.jsonl")
+        legacy.save(counted)
+        cache_operations: dict[str, Callable[[], object]] = {
+            "cache_save": lambda: legacy.save(counted),
+            "cache_load": legacy.load,
+            "cache_exact": lambda: legacy.find_exact(data[-1].name),
+            "cache_prefix": lambda: legacy.find_prefix("project-000"),
+        }
+    else:
+        from pcd_cli.lookup import LookupMode, LookupRequest
+        from pcd_cli.storage import SQLiteProjectStore
+
+        store = SQLiteProjectStore(home / "projects.sqlite3")
+        store.save(counted)
+        cache_operations = {
+            "cache_save": lambda: store.save(counted),
+            "cache_load": store.load,
+            "cache_exact": lambda: store.lookup(LookupRequest(data[-1].name)),
+            "cache_prefix": lambda: store.lookup(
+                LookupRequest("project-000", LookupMode.PREFIX, limit=None)
+            ),
+        }
     config = Config(home / "config.toml")
     config.path.write_text(json_config(root), encoding="utf-8")
     history = UsageHistory(home / "history.json")
@@ -78,10 +102,7 @@ def operations(home: Path, size: int, root_count: int) -> dict[str, Callable[[],
     return {
         "roots": lambda: RootListTable(settings.roots, counted).render(),
         "nested_discoveries": project_discoveries,
-        "cache_save": lambda: cache.save(counted),
-        "cache_load": cache.load,
-        "cache_exact": lambda: cache.find_exact(data[-1].name),
-        "cache_prefix": lambda: cache.find_prefix("project-000"),
+        **cache_operations,
         "search_broad": lambda: rank_matches(data, "project"),
         "search_fuzzy": lambda: rank_matches(data, "pjt999"),
         "search_miss": lambda: rank_matches(data, "zzzz"),

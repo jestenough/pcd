@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 APP_NAME = "pcd-cli"
 CONFIG_FILENAME = "config.toml"
-CACHE_FILENAME = "projects.jsonl"
+CACHE_FILENAME = "projects.sqlite3"
 HISTORY_FILENAME = "history.json"
 DIRECTORY_FSYNC_SUPPORTED = os.name == "posix"
 

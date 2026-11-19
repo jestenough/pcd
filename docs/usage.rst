@@ -42,8 +42,8 @@ file, inside registered scan roots. Ordinary directories can be registered with
 ``pcd add``. You can register multiple scan roots.
 
 Roots are scanned when registered and when the catalog must be rebuilt. A search
-with no matching cached project rescans and retries. There is no background
-watcher; use ``pcd refresh`` to update an existing cache explicitly.
+from the command line with no matching cached project rescans once and retries.
+There is no background watcher; use ``pcd refresh`` to update an existing cache explicitly.
 
 Search and selection
 --------------------
@@ -52,8 +52,11 @@ Search is case-insensitive: exact names take priority, then prefix, substring,
 and fuzzy matches. ``--project`` performs exact-name lookup only.
 
 When several projects match, type to filter the picker, use Up/Down to move,
-Enter to select, or Escape/Ctrl-C to cancel. Editing the query filters the initial
-result set; it does not search the entire catalog again.
+Enter to select, or Escape/Ctrl-C to cancel. Editing the query searches the whole
+cached catalog; it never scans the filesystem. Clear the query to browse by
+recency. The picker keeps at most 100 results in memory and displays 12 rows;
+Up/Down loads further windows so every duplicate name remains reachable.
+A command-line miss refreshes once and retries, while a picker miss stays empty.
 
 Filter ``pcd list`` with ``--manual``, ``--discovered``, or ``--missing``.
 Use ``pcd list --json`` for machine-readable output.

@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pcd_cli.cache import ProjectCache
 from pcd_cli.catalog import count_discovered_by_root, ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.cli.roots import RootListRow, RootListTable
 from pcd_cli.filesystem import canonical_path
 from pcd_cli.models import Discovery, Project, ProjectSource
+from pcd_cli.storage import SQLiteProjectStore
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def reloaded_projects(catalog: ProjectCatalog) -> list[Project]:
-    return ProjectCache(catalog.cache.path).load() or []
+    return SQLiteProjectStore(catalog.cache.path).load() or []
 
 
 def counts_by_root(roots: Sequence[Path], projects: Sequence[Project]) -> list[str]:

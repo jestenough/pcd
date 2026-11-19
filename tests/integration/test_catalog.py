@@ -1,23 +1,24 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from pcd_cli.cache import CACHE_SCHEMA_VERSION, ProjectCache
+from pcd_cli.cache import ProjectCache
 from pcd_cli.catalog import discovered, ProjectCatalog, RefreshReport
 from pcd_cli.config import Config
 from pcd_cli.filesystem import canonical_path
+from pcd_cli.lookup import LookupRequest
 from pcd_cli.models import Project, ProjectSource
 from pcd_cli.scanner import ProjectScanner, ScanError
+from pcd_cli.storage import SQLiteProjectStore, SQLiteSnapshot
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from pcd_cli.cache import ProjectCacheEntry
+    from pcd_cli.lookup import LookupEntry
     from pcd_cli.models import ProjectSettings
 
 
@@ -199,10 +200,7 @@ def test_projects_rebuilds_legacy_cache_without_changing_config(
 
     assert [item.name for item in items] == ["repo"]
     assert projects.config.path.read_text(encoding="utf-8") == config_before
-    first_line = json.loads(projects.cache.path.read_text(encoding="utf-8").splitlines()[0])
-    assert first_line["version"] == CACHE_SCHEMA_VERSION
-    assert isinstance(first_line["refresh_started_ns"], int)
-    assert ProjectCache(projects.cache.path).load() == items
+    assert SQLiteProjectStore(projects.cache.path).load() == items
 
 
 def test_projects_uses_valid_empty_cache(
@@ -323,10 +321,10 @@ def test_manual_add_does_not_publish_conflict_check(
     path.mkdir()
     project = Project("notes", canonical_path(path), path, ProjectSource.MANUAL)
     writes: list[list[Project]] = []
-    original_save = ProjectCache.save
+    original_save = SQLiteProjectStore.save
 
     def save(
-        cache: ProjectCache,
+        cache: SQLiteProjectStore,
         items: list[Project],
         *,
         started_at_ns: int | None = None,
@@ -334,7 +332,7 @@ def test_manual_add_does_not_publish_conflict_check(
         writes.append(list(items))
         return original_save(cache, items, started_at_ns=started_at_ns)
 
-    monkeypatch.setattr(ProjectCache, "save", save)
+    monkeypatch.setattr(SQLiteProjectStore, "save", save)
     assert projects.add_project(project)
     assert writes == [[project]]
 
@@ -347,11 +345,11 @@ def test_manual_add_refreshes_when_publication_is_rejected(
     path = tmp_path / "notes"
     path.mkdir()
     project = Project("notes", canonical_path(path), path, ProjectSource.MANUAL)
-    original_save = ProjectCache.save
+    original_save = SQLiteProjectStore.save
     saves = 0
 
     def save(
-        cache: ProjectCache,
+        cache: SQLiteProjectStore,
         items: list[Project],
         *,
         started_at_ns: int | None = None,
@@ -362,7 +360,7 @@ def test_manual_add_refreshes_when_publication_is_rejected(
             return False
         return original_save(cache, items, started_at_ns=started_at_ns)
 
-    monkeypatch.setattr(ProjectCache, "save", save)
+    monkeypatch.setattr(SQLiteProjectStore, "save", save)
 
     assert projects.add_project(project)
     assert saves == 2
@@ -443,10 +441,10 @@ def test_manual_add_conflict_does_not_publish_cache(
     manual = Project("custom", canonical_path(repo), repo, ProjectSource.MANUAL)
     writes: list[list[Project]] = []
 
-    def save(_cache: ProjectCache, items: list[Project]) -> None:
+    def save(_cache: SQLiteProjectStore, items: list[Project]) -> None:
         writes.append(list(items))
 
-    monkeypatch.setattr(ProjectCache, "save", save)
+    monkeypatch.setattr(SQLiteProjectStore, "save", save)
     assert projects.add_project(manual) is False
     assert writes == []
 
@@ -472,7 +470,7 @@ def test_search_recovers_when_cache_disappears(
     (root / "repo/.git").mkdir(parents=True)
     assert projects.config.add_root(root)
     projects.cache.save(())
-    monkeypatch.setattr(ProjectCache, "load", lambda _cache: None)
+    monkeypatch.setattr(SQLiteProjectStore, "lookup", lambda *_args: None)
 
     assert [item.name for item in projects.resolve("repo").matches] == ["repo"]
 
@@ -519,7 +517,7 @@ def test_exact_duplicates_use_history(projects: ProjectCatalog, tmp_path: Path) 
     assert projects.resolve("same").matches == [items[1], items[0]]
 
 
-def test_search_fuzzy_miss_keeps_streaming_exact_lookup(
+def test_fuzzy_miss_scans_index_once_per_attempt(
     projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "root"
@@ -528,20 +526,20 @@ def test_search_fuzzy_miss_keeps_streaming_exact_lookup(
     projects.refresh()
     (root / "medcab" / ".git").mkdir(parents=True)
     reads = 0
-    original_entries = ProjectCache._entries
+    original_entries = SQLiteSnapshot.records
 
-    def entries(cache: ProjectCache) -> Iterator[ProjectCacheEntry]:
+    def entries(cache: SQLiteSnapshot) -> Iterator[LookupEntry[int]]:
         nonlocal reads
         reads += 1
         return original_entries(cache)
 
-    monkeypatch.setattr(ProjectCache, "_entries", entries)
+    monkeypatch.setattr(SQLiteSnapshot, "records", entries)
 
     assert [item.name for item in projects.resolve("mdc").matches] == ["medcab"]
     assert reads == 2
 
 
-def test_fuzzy_hit_reuses_one_full_cache_load(
+def test_fuzzy_hit_scans_index_once(
     projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     items = [
@@ -550,16 +548,16 @@ def test_fuzzy_hit_reuses_one_full_cache_load(
     ]
     projects.cache.save(items)
     reads = 0
-    original_entries = ProjectCache._entries
+    original_entries = SQLiteSnapshot.records
 
-    def entries(cache: ProjectCache) -> Iterator[ProjectCacheEntry]:
+    def entries(cache: SQLiteSnapshot) -> Iterator[LookupEntry[int]]:
         nonlocal reads
         reads += 1
         yield from original_entries(cache)
 
-    monkeypatch.setattr(ProjectCache, "_entries", entries)
+    monkeypatch.setattr(SQLiteSnapshot, "records", entries)
     assert projects.resolve("mdc").matches == [items[1]]
-    assert reads == 2
+    assert reads == 1
 
 
 def test_fuzzy_many_results_preserves_history_order(
@@ -590,7 +588,7 @@ def test_exact_hit_avoids_full_decode_and_history(
     def fail(*_args: object) -> None:
         raise AssertionError("exact hit must not load the full cache or history")
 
-    monkeypatch.setattr(ProjectCache, "load", fail)
+    monkeypatch.setattr(SQLiteProjectStore, "load", fail)
     monkeypatch.setattr(type(projects.history), "load", fail)
     monkeypatch.setattr(ProjectCatalog, "refresh", fail)
     assert projects.resolve("repo").matches == [project]
@@ -626,3 +624,64 @@ def test_manual_add_handles_concurrent_config_change(
 
 def test_remove_missing_project_returns_false(projects: ProjectCatalog, tmp_path: Path) -> None:
     assert projects.remove_project(tmp_path / "missing") is False
+
+
+def test_valid_legacy_import_does_not_scan_or_change_config(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = Project("manual", tmp_path / "manual", tmp_path / "manual", ProjectSource.MANUAL)
+    projects.config.add_project(project)
+    before = projects.config.path.read_bytes()
+    legacy = ProjectCache(projects.cache.path.with_name("projects.jsonl"))
+    legacy.save([project], started_at_ns=1)
+
+    def fail(*_args: object) -> None:
+        raise AssertionError("migration must not scan or load history")
+
+    monkeypatch.setattr(ProjectScanner, "scan", fail)
+    monkeypatch.setattr(type(projects.history), "load", fail)
+    assert projects.resolve("manual").matches == [project]
+    assert projects.config.path.read_bytes() == before
+    assert legacy.load() == [project]
+
+
+def test_picker_miss_does_not_refresh_missing_cache(
+    projects: ProjectCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(*_args: object) -> None:
+        raise AssertionError("picker must not refresh or load config")
+
+    monkeypatch.setattr(ProjectCatalog, "refresh", fail)
+    monkeypatch.setattr(Config, "load", fail)
+    result = projects.lookup(LookupRequest("missing"), refresh_on_miss=False, usage={})
+    assert result.matches == [] and result.total == 0
+    assert not projects.config.path.exists()
+    assert not projects.cache.path.exists()
+
+
+def test_resolver_refreshes_at_most_once_and_uses_one_lookup_per_attempt(
+    projects: ProjectCatalog,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refreshes = 0
+    lookups = 0
+    original_refresh = ProjectCatalog.refresh
+    original_lookup = SQLiteProjectStore.lookup
+
+    def refresh(catalog: ProjectCatalog) -> list[Project]:
+        nonlocal refreshes
+        refreshes += 1
+        return original_refresh(catalog)
+
+    def lookup(store: SQLiteProjectStore, request: LookupRequest, *args: object) -> object:
+        nonlocal lookups
+        lookups += 1
+        return original_lookup(store, request)
+
+    monkeypatch.setattr(ProjectCatalog, "refresh", refresh)
+    monkeypatch.setattr(SQLiteProjectStore, "lookup", lookup)
+    assert projects.resolve("missing").matches == []
+    assert refreshes == 1 and lookups == 2

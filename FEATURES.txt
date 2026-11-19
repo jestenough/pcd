@@ -10,8 +10,10 @@ PROJECT NAVIGATION
 
     The interactive picker opens when a project query has multiple matches.
     Type to filter, use Up/Down to move, Enter to select, or Escape/Ctrl-C to cancel.
-    The picker filters the initial matches; editing the query does not search
-    outside that result set. Canceling leaves the current directory unchanged.
+    Editing the query searches the entire cached catalog without scanning roots.
+    The picker retains at most 100 results and displays 12 rows. Up/Down loads
+    further windows, preserving access to all duplicate names. Clearing the query
+    sorts by recency. Canceling leaves the current directory unchanged.
 
     Search ignores case and prefers exact names, then prefix, substring, and fuzzy
     matches. A unique exact name is selected directly. Equal text matches use
@@ -57,11 +59,14 @@ PROJECT DISCOVERY
     in every root that discovered it, including overlapping roots and roots reached
     through followed symlinks. Manual projects are not counted.
 
-    The cache records the root and display route for every discovery. When the cache
-    schema changes, older snapshots are rebuilt by the next catalog lookup or refresh;
-    user configuration is never rewritten by that migration. Completion only reads
-    the cache and returns no project candidates if it is absent or invalid; it never
-    scans roots or loads usage history.
+    The cache records the root and display route for every discovery. Its file
+    is now projects.sqlite3, with indexed exact/prefix lookup and a single metadata pass
+    for fuzzy lookup. A valid schema-3 projects.jsonl is imported once, preserving
+    its timestamp and provenance. Configuration and history retain their formats.
+    Invalid snapshots are rebuilt; incomplete scans never replace a complete cache.
+    Completion only reads the cache (or JSONL before migration); it never scans,
+    migrates, loads history, or creates configuration. See docs/storage-030.rst
+    for compatibility, recovery, and the cross-platform validation gate.
 
     Each cache snapshot records when its refresh began. If a newer refresh publishes
     while an older refresh is still scanning, the older refresh cannot overwrite the

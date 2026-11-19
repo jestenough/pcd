@@ -151,9 +151,9 @@ def test_application_paths_follow_platformdirs(
     if os.name == "nt":
         base = Path(os.environ["WIN_PD_OVERRIDE_LOCAL_APPDATA"]) / "pcd-cli"
         assert paths.config == base / "config.toml"
-        assert paths.cache == base / "Cache/projects.jsonl"
+        assert paths.cache == base / "Cache/projects.sqlite3"
         assert paths.history == base / "history.json"
     else:
         assert paths.config == tmp_path / "config/pcd-cli/config.toml"
-        assert paths.cache == tmp_path / "cache/pcd-cli/projects.jsonl"
+        assert paths.cache == tmp_path / "cache/pcd-cli/projects.sqlite3"
         assert paths.history == tmp_path / "state/pcd-cli/history.json"

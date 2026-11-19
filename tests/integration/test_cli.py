@@ -59,12 +59,15 @@ def test_group_completion_uses_cache(tmp_path: Path) -> None:
     assert any(item.value == "repo" for item in items)
 
 
-def test_version_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_version_fallback(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
     def missing(_name: str) -> str:
         raise PackageNotFoundError
 
-    monkeypatch.setattr("pcd_cli.cli.app.metadata.version", missing)
+    monkeypatch.setattr("importlib.metadata.version", missing)
     assert cli_module.package_version() == "0+unknown"
+    result = runner.invoke(cli, ["--version"], prog_name="pcd")
+    assert result.exit_code == 0
+    assert result.output == "pcd, version 0+unknown\n"
 
 
 def test_main_error_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
