@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from pcd_cli.search import ProjectRank
 
 type UsageLoader = Callable[[], Mapping[Path, ProjectUsage]]
+type DirectoryEntry = tuple[str, str, int, float, float, str]
 RESULT_LIMIT = 100
 
 

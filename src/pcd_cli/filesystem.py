@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 APP_NAME = "pcd-cli"
 CONFIG_FILENAME = "config.toml"
 CACHE_FILENAME = "projects.sqlite3"
-HISTORY_FILENAME = "history.json"
+HISTORY_FILENAME = "directories.sqlite3"
 DIRECTORY_FSYNC_SUPPORTED = os.name == "posix"
 
 
@@ -36,6 +36,18 @@ class ApplicationPaths:
             cache=directories.user_cache_path / CACHE_FILENAME,
             history=directories.user_state_path / HISTORY_FILENAME,
         )
+
+
+def database_uri(path: Path) -> str:
+    from urllib.parse import quote_from_bytes
+
+    absolute = path.resolve()
+    # Leave Windows UNC and device paths to pathlib. For local files, as_uri()
+    # imports urllib.request on newer Python versions just to encode the path.
+    if absolute.drive.startswith("\\\\"):
+        return absolute.as_uri()
+    prefix = "file:///" if absolute.drive else "file://"
+    return prefix + quote_from_bytes(os.fsencode(absolute.as_posix()), safe="/:")
 
 
 def canonical_path(path: Path) -> Path:

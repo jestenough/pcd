@@ -52,3 +52,4 @@ class ProjectSettings:
 class ProjectUsage:
     used_at: float
     count: int
+    preference: float = 0.0

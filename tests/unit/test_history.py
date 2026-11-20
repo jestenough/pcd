@@ -8,9 +8,9 @@ from pcd_cli.history import UsageHistory
 
 def test_history_touch_increments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     times = iter((10.0, 20.0))
-    monkeypatch.setattr("pcd_cli.history.time.time", lambda: next(times))
+    monkeypatch.setattr("pcd_cli.visits.time.time", lambda: next(times))
 
-    history = UsageHistory(tmp_path / "history.json")
+    history = UsageHistory(tmp_path / "directories.sqlite3")
     path = tmp_path / "repo"
 
     history.record(path)
@@ -22,8 +22,8 @@ def test_history_touch_increments(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_history_corruption_is_ignored(tmp_path: Path) -> None:
-    history = UsageHistory(tmp_path / "history.json")
-    history.path.write_text("not-json", encoding="utf-8")
+    history = UsageHistory(tmp_path / "directories.sqlite3")
+    history.path.with_name("history.json").write_text("not-json", encoding="utf-8")
 
     assert history.load() == {}
 
@@ -38,27 +38,28 @@ def test_history_corruption_is_ignored(tmp_path: Path) -> None:
         {"/x": {"used_at": float("nan"), "count": 1}},
         {"/x": {"used_at": float("inf"), "count": 1}},
         {"/x": {"used_at": 10**400, "count": 1}},
+        {"/x": {"used_at": 1, "count": 10**400}},
     ],
 )
 def test_history_rejects_invalid_rows(tmp_path: Path, payload: object) -> None:
-    history = UsageHistory(tmp_path / "history.json")
-    history.path.write_text(json.dumps(payload), encoding="utf-8")
+    history = UsageHistory(tmp_path / "directories.sqlite3")
+    history.path.with_name("history.json").write_text(json.dumps(payload), encoding="utf-8")
 
     assert history.load() == {}
 
 
 @pytest.mark.parametrize("payload", ["[" * 2000 + "]" * 2000, "1" * 5000])
 def test_history_recovers_from_json_decoder_limits(tmp_path: Path, payload: str) -> None:
-    history = UsageHistory(tmp_path / "history.json")
-    history.path.write_text(payload, encoding="utf-8")
+    history = UsageHistory(tmp_path / "directories.sqlite3")
+    history.path.with_name("history.json").write_text(payload, encoding="utf-8")
     history.record(tmp_path / "repo")
     assert history.load()[tmp_path / "repo"].count == 1
 
 
 def test_history_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    history = UsageHistory(tmp_path / "history.json", limit=2)
+    history = UsageHistory(tmp_path / "directories.sqlite3", limit=2)
     times = iter((1.0, 2.0, 3.0))
-    monkeypatch.setattr("pcd_cli.history.time.time", lambda: next(times))
+    monkeypatch.setattr("pcd_cli.visits.time.time", lambda: next(times))
 
     history.record(Path("/one"))
     history.record(Path("/two"))
@@ -69,7 +70,7 @@ def test_history_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.parametrize("limit", [0, -1])
 def test_non_positive_history_limit_discards_entries(tmp_path: Path, limit: int) -> None:
-    history = UsageHistory(tmp_path / "history.json", limit=limit)
+    history = UsageHistory(tmp_path / "directories.sqlite3", limit=limit)
 
     history.record(Path("/repo"))
 
@@ -79,8 +80,8 @@ def test_non_positive_history_limit_discards_entries(tmp_path: Path, limit: int)
 def test_history_trims_existing_data_to_new_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    history = UsageHistory(tmp_path / "history.json", limit=2)
-    history.path.write_text(
+    history = UsageHistory(tmp_path / "directories.sqlite3", limit=2)
+    history.path.with_name("history.json").write_text(
         json.dumps(
             {
                 "/one": {"used_at": 1.0, "count": 1},
@@ -91,7 +92,7 @@ def test_history_trims_existing_data_to_new_limit(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("pcd_cli.history.time.time", lambda: 5.0)
+    monkeypatch.setattr("pcd_cli.visits.time.time", lambda: 5.0)
 
     history.record(Path("/five"))
 

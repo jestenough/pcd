@@ -11,6 +11,11 @@ import pcd_cli.filesystem as filesystem
 from pcd_cli.filesystem import ApplicationPaths, atomic_write, format_path
 
 
+def test_database_uri_preserves_local_path_escaping(tmp_path: Path) -> None:
+    path = tmp_path / "résumé #1%2F.sqlite3"
+    assert filesystem.database_uri(path) == path.resolve().as_uri()
+
+
 def test_atomic_replaces_file(tmp_path: Path) -> None:
     path = tmp_path / "file.txt"
 
@@ -152,8 +157,8 @@ def test_application_paths_follow_platformdirs(
         base = Path(os.environ["WIN_PD_OVERRIDE_LOCAL_APPDATA"]) / "pcd-cli"
         assert paths.config == base / "config.toml"
         assert paths.cache == base / "Cache/projects.sqlite3"
-        assert paths.history == base / "history.json"
+        assert paths.history == base / "directories.sqlite3"
     else:
         assert paths.config == tmp_path / "config/pcd-cli/config.toml"
         assert paths.cache == tmp_path / "cache/pcd-cli/projects.sqlite3"
-        assert paths.history == tmp_path / "state/pcd-cli/history.json"
+        assert paths.history == tmp_path / "state/pcd-cli/directories.sqlite3"

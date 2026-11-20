@@ -52,8 +52,15 @@ Storage and upgrades
 --------------------
 
 Roots and manual registrations remain in ``config.toml``. The disposable project
-catalog uses ``projects.sqlite3`` in the platform's user-cache directory; usage stays
-in ``history.json`` in the user-state directory. A valid 0.2.8 JSONL cache is
+catalog uses ``projects.sqlite3`` in the platform's user-cache directory.
+Project jumps and tracked directory changes share one visit count in
+``directories.sqlite3``. Switching tracking on or off preserves that count.
+On upgrade, pcd adds counts from the old ``history.json`` to any visits
+already recorded in SQLite. The migration is recorded in the same transaction,
+so reopening the database does not add those counts again. Old project jumps
+alone do not register ordinary directories or set a resume destination.
+
+A valid 0.2.8 JSONL project cache is
 imported on the first normal read. Completion does not perform migration.
 
 Run ``pcd refresh`` to recover an invalid or missing database. Keep the small

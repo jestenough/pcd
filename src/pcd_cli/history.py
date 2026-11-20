@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import json
 import math
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, TypeGuard
 
-from pcd_cli.filesystem import atomic_write, file_lock
 from pcd_cli.models import ProjectUsage
 
 DEFAULT_HISTORY_LIMIT = 2048
@@ -20,38 +18,30 @@ class UsageHistoryEntry(TypedDict):
 
 @dataclass(frozen=True, slots=True)
 class UsageHistory:
-    """Bounded usage history used as a tie-breaker during search."""
+    """Project-ranking facade over the shared navigation history store."""
 
     path: Path
     limit: int = DEFAULT_HISTORY_LIMIT
 
     def load(self) -> dict[Path, ProjectUsage]:
-        if not self.path.is_file():
-            return {}
+        from pcd_cli.visits import DirectoryVisits
 
-        try:
-            with self.path.open(encoding="utf-8") as stream:
-                raw: object = json.load(stream)
-        except (OSError, ValueError, RecursionError):
-            return {}
-
-        return _decode_usage(raw)
+        return DirectoryVisits(self.path).usage()
 
     def record(self, path: Path) -> None:
-        with file_lock(self.path):
-            usage = self.load()
-            previous = usage.get(path)
-            count = 1 if previous is None else previous.count + 1
-            usage[path] = ProjectUsage(used_at=time.time(), count=count)
-            retained = _retain_recent(usage, self.limit)
+        from pcd_cli.visits import DirectoryVisits
 
-            payload: dict[str, UsageHistoryEntry] = {
-                str(project_path): {"used_at": item.used_at, "count": item.count}
-                for project_path, item in retained.items()
-            }
-            with atomic_write(self.path) as stream:
-                stream.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
-                stream.write("\n")
+        DirectoryVisits(self.path).record(path, project_only=True, limit=self.limit)
+
+
+def load_legacy(path: Path) -> dict[Path, ProjectUsage]:
+    """Read the former JSON history without modifying the recovery source."""
+    try:
+        with path.open(encoding="utf-8") as stream:
+            raw: object = json.load(stream)
+    except (FileNotFoundError, ValueError, RecursionError):
+        return {}
+    return _decode_usage(raw)
 
 
 def _decode_usage(value: object) -> dict[Path, ProjectUsage]:
@@ -82,22 +72,5 @@ def _is_usage_entry(value: object) -> TypeGuard[UsageHistoryEntry]:
         valid_time = math.isfinite(used_at)
     except OverflowError:
         return False
-    valid_count = not isinstance(count, bool) and isinstance(count, int) and count > 0
+    valid_count = not isinstance(count, bool) and isinstance(count, int) and 0 < count <= 2**63 - 1
     return valid_time and valid_count
-
-
-def _retain_recent(
-    usage: dict[Path, ProjectUsage],
-    limit: int,
-) -> dict[Path, ProjectUsage]:
-    if limit <= 0:
-        return {}
-    if len(usage) <= limit:
-        return usage
-
-    newest = sorted(
-        usage.items(),
-        key=lambda item: (item[1].used_at, item[1].count, str(item[0])),
-        reverse=True,
-    )[:limit]
-    return dict(newest)
