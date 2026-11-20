@@ -360,6 +360,81 @@ code all 24 test writes committed while the iterator remained paused. After
 three warmups the median write took 5.22 ms and p95 was 10.13 ms. This probe
 measures the history writer in-process, excluding shell and Python startup.
 
+Windows visit recording
+-----------------------
+
+The earlier PowerShell wrapper started PCD twice. The first process returned the
+destination. After a successful directory change, the second process
+recorded the actual working directory. That wrapper looked up the executable
+once per jump and uses it for both invocations, including when the location
+change triggers the tracking hook. Ordinary tracked changes still resolve
+the executable against the current PATH.
+
+The history writer uses a SQLite transaction. Config and catalog writers
+now import their separate file-lock and temporary-file helpers on demand.
+Project-history pruning walks the recency index and deletes only the rows
+past the retention limit. Trimming 2,049 project-only rows to 2,048 took
+4,203 SQLite virtual-machine instructions, down from 41,027 for the same
+deletion. Tracked and imported rows remain outside the limit.
+
+Local Windows comparison against ``bad8e06``, Python 3.15.2 and PowerShell
+7.6.9. Both versions used the same launcher and interpreter on a warm
+filesystem. The table shows median milliseconds for 21 fresh-process
+observations per version, alternating their order, on one registered project.
+
+.. csv-table::
+   :header: "Phase", "Before", "After"
+
+   "Resolve an exact name through pcd.exe", 318.8, 272.6
+   "Record a project visit through pcd.exe", 275.3, 265.0
+   "Load recorder dependencies inside Python", 162.7, 137.8
+   "Read and apply exclusions", 5.0, 4.7
+   "Write history including commit", 8.2, 6.5
+   "Commit alone", 3.4, 3.2
+
+The last four rows come from instrumented writer processes. The first two
+include process launch and exit. The recorder's p95 was 375.4 ms before and
+374.8 ms after. As a measure of host variability, even an empty process
+using the same Python executable had medians of 80.6 and 70.4 ms in the two
+sample groups.
+
+End-to-end timings from ``benchmarks/small_shell_jumps.py`` include the
+directory change and its committed visit. Each row used three warmups and
+21 measured rounds per version. Two simultaneous terminals produced 42
+samples per version. The driver verified every destination and the final
+visit count.
+
+.. csv-table::
+   :header: "Projects", "Terminals", "Median before (ms)", "Median after (ms)", "p95 before (ms)", "p95 after (ms)"
+
+   1, 1, 560.8, 514.9, 870.8, 766.9
+   1, 2, 674.1, 559.8, 862.9, 819.5
+   25, 1, 718.5, 604.7, 1134.6, 731.9
+   25, 2, 781.6, 689.7, 1080.7, 946.0
+
+PowerShell 7 session worker
+---------------------------
+
+The Windows wrapper now keeps one Python worker per active terminal for
+exact jumps, reuses its SQLite history writer and waits for each visit to
+commit. The following local comparison used Windows, PowerShell 7.6.9,
+Python 3.15.2, baseline ``bad8e06`` and the same launcher for both trees.
+``benchmarks/small_shell_jumps.py`` alternated versions over 21 rounds
+after three warmups. Each pair of terminals shared its history database.
+The driver checked every destination and the final count of committed visits.
+
+.. csv-table::
+   :header: "Projects", "Terminals", "Median before (ms)", "Median after (ms)", "p95 before (ms)", "p95 after (ms)"
+
+   1, 1, 583.6, 21.5, 665.3, 24.1
+   1, 2, 637.6, 25.8, 699.8, 37.9
+   25, 1, 530.3, 19.0, 644.4, 33.9
+   25, 2, 600.3, 24.9, 718.1, 40.0
+
+The first jump after shell initialization took a median of 367.5 ms in
+11 fresh terminals on a one-project fixture. The table covers repeated
+exact jumps. The 20 ms p95 target remains open.
+
 Local validation of the SQLite implementation
 ---------------------------------------------
 
