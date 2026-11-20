@@ -51,6 +51,16 @@ run ``pcd refresh``. That version will discover those projects again.
 Storage and upgrades
 --------------------
 
+Directory tracking and zoxide import store visit counts, timestamps and imported
+scores in ``directories.sqlite3`` in the platform user-state directory. This
+database also supplies the last visited subdirectory for resume. A refresh
+rebuilds the separate project cache and preserves this state.
+
+To omit private locations from tracking and import, set ``PCD_EXCLUDE_DIRS``
+to glob patterns separated by the system path separator (semicolon on Windows,
+colon on Unix). For example, ``~/private*`` matches paths beginning with that
+prefix. Project path exclusions also cover descendant directories when learning.
+
 Roots and manual registrations remain in ``config.toml``. The disposable project
 catalog uses ``projects.sqlite3`` in the platform's user-cache directory.
 Project jumps and tracked directory changes share one visit count in

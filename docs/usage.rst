@@ -93,6 +93,16 @@ destinations. See the `shell setup guide <shells.rst>`_ for the opt-in hooks.
 under the project. If that directory disappeared, pcd explains the fallback
 and opens the project root. Use ``pcd PROJECT`` to open the root directly.
 
+To preview and then import ranked directories from an installed zoxide, run::
+
+    pcd import zoxide --dry-run
+    pcd import zoxide
+
+Importing merges by canonical path. An imported score expresses preference;
+it does not increment the visit count. Importing the same data twice preserves
+the same ranking. Imported directories become searchable without a prior pcd
+visit; resume uses actual recorded visits.
+
 Search is case-insensitive: exact names take priority, then prefix, substring,
 and fuzzy matches. ``--project`` performs exact-name lookup only.
 

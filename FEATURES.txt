@@ -23,6 +23,9 @@ PROJECT NAVIGATION
         pcd --project <project>
     This uses exact-name lookup only and cannot be combined with a subcommand.
 
+    Multiple words match ordered path components, e.g. pcd acme api.
+    pcd PROJECT --resume opens its last recorded subdirectory.
+
     Directory changes require an active shell wrapper. Without it, pcd prints
     the destination and an integration hint instead of changing the parent shell.
 
@@ -62,7 +65,7 @@ PROJECT DISCOVERY
     The cache records the root and display route for every discovery. Its file
     is now projects.sqlite3, with indexed exact/prefix lookup and a single metadata pass
     for fuzzy lookup. A valid schema-3 projects.jsonl is imported once, preserving
-    its timestamp and provenance. Configuration and history retain their formats.
+    its timestamp and provenance. Roots and manual registrations remain in TOML.
     Invalid snapshots are rebuilt; incomplete scans never replace a complete cache.
     Completion only reads the cache (or JSONL before migration); it never scans,
     migrates, loads history, or creates configuration. See docs/storage-030.rst
@@ -140,15 +143,20 @@ CONFIGURATION
 
 USAGE HISTORY
 
-    Successful project selection records last-used time and increments a usage count.
-    History keeps up to 2,048 entries when written. Invalid history is treated as empty.
+    The shell records visits after a successful directory change. Printing a
+    destination or canceling a selection leaves history untouched. Project jumps
+    and opt-in cd tracking share a counter in directories.sqlite3 in user state.
+    Legacy JSON visit counts are imported once. This history survives project
+    cache recovery and refresh.
+    pcd import zoxide imports preferences separately from actual visit counts.
     If writing history fails with an I/O error, navigation continues and prints a
     warning to stderr. This history already exists; further ranking changes are planned.
 
 
 DATA DURABILITY
 
-    Configuration, usage history, and managed shell files use atomic replacement.
+    Configuration and managed shell files use atomic replacement. Usage history
+    updates use SQLite transactions.
     SQLite publishes catalog refreshes in a transaction. Cache creation and
     recovery publish a complete replacement database.
 

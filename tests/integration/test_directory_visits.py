@@ -2,17 +2,207 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from typing import TYPE_CHECKING
 
+from pcd_cli.cli import cli
 from pcd_cli.history import UsageHistory
-from pcd_cli.visits import DirectoryVisits
+from pcd_cli.visits import DirectoryVisits, is_excluded
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
+    from click.testing import CliRunner
+
+    from pcd_cli.catalog import ProjectCatalog
+
+
+def test_tracking_survives_cache_loss_and_refresh(
+    projects: ProjectCatalog, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "checkout"
+    child = root / "tests"
+    child.mkdir(parents=True)
+    monkeypatch.chdir(child)
+    assert runner.invoke(cli, ["_visit"]).exit_code == 0
+    store = DirectoryVisits(projects.history.path)
+    store.merge({child: 83.5})
+    before = store.entries()
+    projects.refresh()
+    projects.cache.path.unlink()
+    projects.refresh()
+    projects.refresh()
+    assert store.entries() == before
+    assert before[child].count == 1
+    assert before[child].used_at > 0
+    assert before[child].preference == 83.5
+    assert store.resume(root) == child
+
+
+def test_parallel_visits_and_resume_boundary(tmp_path: Path) -> None:
+    store = DirectoryVisits(tmp_path / "state.sqlite3")
+    project = tmp_path / "api"
+    child = project / "src"
+    with ThreadPoolExecutor(4) as pool:
+        list(pool.map(store.record, [child] * 10))
+    store.record(tmp_path / "api-server")
+    store.record(project)
+    assert store.entries()[child].count == 10
+    assert store.resume(project) == child
+
+
+def test_private_directories(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    private = tmp_path / "private"
+    monkeypatch.setenv("PCD_EXCLUDE_DIRS", str(private / "*"))
+    assert is_excluded(private / "client", frozenset())
+    assert is_excluded(private, frozenset({private}))
+    assert is_excluded(private / "client", frozenset({private}))
+    assert not is_excluded(tmp_path / "public", frozenset({private}))
+
+
+def test_import_preview_merge_and_invalid_rows(
+    projects: ProjectCatalog, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "directory with spaces"
+    other = tmp_path / "other"
+    data = subprocess.CompletedProcess(["zoxide"], 0, f"  9.5 {first}\n  2.0 {other}\n", "")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: data)
+    store = DirectoryVisits(projects.history.path)
+    command = ["import", "zoxide"]
+    assert "Would merge 2" in runner.invoke(cli, [*command, "--dry-run"]).output
+    assert not store.path.exists()
+    store.record(first)
+    assert runner.invoke(cli, command).exit_code == 0
+    before = store.entries()
+    assert runner.invoke(cli, command).exit_code == 0
+    assert before == store.entries()
+    assert before[first].count == 1 and before[other].count == 0
+    assert before[first].preference > before[other].preference
+    data.stdout += "nan relative\n"
+    assert runner.invoke(cli, command).exit_code == 1
+    assert store.entries() == before
+
+
+def test_import_failure(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(subprocess, "run", missing)
+    assert "Cannot find zoxide" in runner.invoke(cli, ["import", "zoxide"]).output
+
+
+def test_real_zoxide_import(
+    projects: ProjectCatalog, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shutil
+
+    import pytest
+
+    executable = shutil.which("zoxide")
+    if not executable:
+        pytest.skip("zoxide executable unavailable")
+    monkeypatch.setenv("_ZO_DATA_DIR", str(tmp_path / "zoxide-state"))
+    folder = tmp_path / "external directory"
+    folder.mkdir()
+    subprocess.run([executable, "add", "--", str(folder)], check=True)
+    result = runner.invoke(cli, ["import", "zoxide"])
+    assert result.exit_code == 0, result.output
+    store = DirectoryVisits(projects.history.path)
+    imported = store.entries()[folder]
+    assert imported.preference > 0 and imported.count == 0
+
+
+def test_directory_history_initialization_and_future_schema(tmp_path: Path) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    import pytest
+
+    store = DirectoryVisits(tmp_path / "state.sqlite3")
+    with closing(sqlite3.connect(store.path)) as writer:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("CREATE TABLE future(value INTEGER)")
+        assert store.entries() == {}
+        assert store.resume(tmp_path) is None
+        writer.execute("PRAGMA user_version = 4")
+        writer.commit()
+    with pytest.raises(OSError, match="Unsupported"):
+        store.record(tmp_path)
+    with closing(sqlite3.connect(store.path)) as reader:
+        assert reader.execute("PRAGMA user_version").fetchone() == (4,)
+
+
+def test_excluded_directories_are_never_recorded_or_imported(
+    projects: ProjectCatalog, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    private = tmp_path / "private"
+    private.mkdir()
+    monkeypatch.setenv("PCD_EXCLUDE_DIRS", str(private))
+    monkeypatch.chdir(private)
+    store = DirectoryVisits(projects.history.path)
+    assert runner.invoke(cli, ["_visit"]).exit_code == 0
+    assert runner.invoke(cli, ["_visit", "--project-only"]).exit_code == 0
+    assert projects.history.load() == {}
+    data = subprocess.CompletedProcess(["zoxide"], 0, f"1.0 {private}\n", "")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: data)
+    assert "Merged 0 directories" in runner.invoke(cli, ["import", "zoxide"]).output
+    assert not store.path.exists()
+
+
+def test_broken_zoxide_output_is_reported(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    command = ["import", "zoxide"]
+    data = subprocess.CompletedProcess(["zoxide"], 19, "", "")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: data)
+    assert "exit 19" in runner.invoke(cli, command).output
+
+    def invalid_encoding(*args: object, **kwargs: object) -> None:
+        raise UnicodeError
+
+    monkeypatch.setattr(subprocess, "run", invalid_encoding)
+    assert "Invalid UTF-8" in runner.invoke(cli, command).output
+
+
+def test_resume_with_reserved_project_name(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "info"
+    child = repo / "lib"
+    child.mkdir(parents=True)
+    assert runner.invoke(cli, ["add", str(repo)]).exit_code == 0
+    monkeypatch.chdir(child)
+    assert runner.invoke(cli, ["_visit"]).exit_code == 0
+    result = runner.invoke(cli, ["--project", "info", "--resume"], env={"PCD_SHELL": "1"})
+    assert result.exit_code == 10 and result.stdout.strip() == str(child.resolve())
+    assert runner.invoke(cli, ["--resume"]).exit_code == 2
+
+
+def test_project_visits_and_tracking_share_counts_without_implicit_learning(
+    projects: ProjectCatalog, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repo"
+    child = root / "notes"
+    child.mkdir(parents=True)
+    assert runner.invoke(cli, ["add", str(root)]).exit_code == 0
+    monkeypatch.chdir(child)
+    store = DirectoryVisits(projects.history.path)
+    for _ in range(7):
+        assert runner.invoke(cli, ["_visit", "--project-only"]).exit_code == 0
+    assert projects.history.load()[child].count == 7
+    assert store.entries() == {}
+    assert store.resume(root) is None
+    assert runner.invoke(cli, ["notes"]).exit_code == 3
+    for _ in range(5):
+        assert runner.invoke(cli, ["_visit"]).exit_code == 0
+    assert store.entries()[child].count == 12
+    assert projects.history.load()[child].count == 12
+    assert store.resume(root) == child
+    assert runner.invoke(cli, ["notes"]).stdout.strip() == str(child)
+    assert not projects.history.path.with_name("history.json").exists()
 
 
 def _legacy_directory_database(path: Path, child: Path) -> None:

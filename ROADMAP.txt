@@ -2,9 +2,55 @@ PCD ROADMAP
 ===========
 
 Current release: 0.2.8.
-Work through planned releases in the order below. Within each release, follow the listed order.
-Future version numbers are planning targets.
-Release when its acceptance checks pass; do not delay it for tasks assigned to later versions.
+
+0.3.0 - EVERYDAY DIRECTORY NAVIGATION
+-------------------------------------
+
+Ship all four tasks together in 0.3.0. Keep the package at 0.2.8 during
+development and bump it once when preparing the release.
+
+    1. Remember ordinary cd visits. Offer opt-in shell tracking, honor path exclusions,
+       and record each successful directory change once, including non-Git directories.
+       Keep visits across sessions and cache rebuilds. An unchanged working directory
+       should start zero extra processes at the next prompt.
+
+    2. Search by multiple words. Match ordered path components so that "pcd acme api"
+       finds the api checkout under acme. Rank ambiguous matches using visit frequency
+       and recency. Preserve deterministic jumps for unique exact project names.
+
+    3. Import zoxide history. Provide "pcd import zoxide --dry-run" to preview a merge.
+       Preserve relative preferences and keep repeated imports idempotent.
+
+    4. Resume work inside a project. "pcd PROJECT --resume" returns to the last
+       visited subdirectory of that project. If it disappeared, explain why and open
+       the project root. A plain "pcd PROJECT" continues to open the root.
+
+
+REFRESH AND CACHE RECOVERY
+--------------------------
+
+    Refresh rebuilds the discovered project catalog from configured roots.
+    Vanished discoveries drop out. Roots, manual registrations and exclusions
+    survive even when their directories are temporarily unavailable.
+
+    Preserve learned directories, visit counts and timestamps, preferences
+    imported from zoxide, and each project's last visited subdirectory.
+    Verify this by deleting the project cache, running pcd refresh twice,
+    and checking that the same history, preferences and resume paths remain.
+
+
+DIRECTORY SELECTION
+-------------------
+
+    pcd opens a unique exact project name directly, even when another directory
+    has more visits. Duplicate exact names open the picker. For a partial or
+    multi-word query, open a sole match directly and offer a picker for several.
+
+    Rank by match quality, then frequency and recency; use the canonical path
+    to break remaining ties consistently.
+
+    Canceling the picker or finding no match keeps the current directory and
+    history intact. Record a visit only after a successful directory change.
 
 
 OUTSTANDING PLATFORM CHECKS
@@ -13,11 +59,17 @@ OUTSTANDING PLATFORM CHECKS
     Run the test suite and storage and CLI comparisons on macOS. Compare startup,
     exact navigation, refresh, disk usage and memory with the Linux and Windows results.
     Run the Windows symlink tests on a runner that permits symlink creation.
+    Compare end-to-end jump latency with zoxide on all three platforms.
     See docs/storage-030.rst for the measurements and acceptance criteria.
 
 
-0.4.0 - PROJECT ALIASES
------------------------
+DEFERRED IDEAS (UNSCHEDULED)
+============================
+
+Revisit these after the four navigation priorities above.
+
+PROJECT ALIASES
+---------------
 
 COMMANDS
     pcd alias add <project> --as <alias>
@@ -32,8 +84,8 @@ REQUIREMENTS
     Complete aliases in relevant commands.
 
 
-0.5.0 - PROJECT GROUPS
-----------------------
+PROJECT GROUPS
+--------------
 
 COMMANDS
     pcd group create <group>
@@ -59,36 +111,28 @@ REQUIREMENTS
     Remove missing discovered projects from the rebuilt cache, not user-defined references.
 
 
-0.6.0 - OUTPUT AND SEARCH UX
-----------------------------
+OUTPUT AND SEARCH UX
+--------------------
 
     1. Align tables using terminal display width for wide Unicode characters.
     2. Evaluate compact JSON and an explicit pretty-print option without silently breaking output.
     3. Add machine-readable output where useful and additional list sorting modes.
     4. Evaluate optional helpers for creating groups from matching project names.
-    5. Review frecency ranking using the existing usage count and last-used timestamp.
-       History collection and bounded retention already exist; do not reimplement them.
-       Keep history lightweight and preserve deterministic unique exact-name resolution.
 
 
-0.7.0 - ADDITIONAL SHELL SUPPORT
--------------------------------
+ADDITIONAL SHELL SUPPORT
+------------------------
 
     Add Nushell support with real shell tests and documentation.
     Keep automatic installation optional and manual configuration supported.
 
 
-AFTER 0.7.0 - OPTIONAL INTEGRATIONS
------------------------------------
-
-Assign a release version to each implementation after feasibility and scope are established.
-These are retained ideas, not prerequisites for the releases above.
-
 OPTIONAL INTEGRATIONS
+---------------------
+
     Add tmux integration.
     Add IDE and editor plugins.
     Add direnv integration.
-    Add import and interoperability with zoxide.
     Add desktop launcher integration.
 
 
