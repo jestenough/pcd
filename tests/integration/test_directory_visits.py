@@ -6,16 +6,18 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+import pytest
 
 from pcd_cli.cli import cli
 from pcd_cli.history import UsageHistory
 from pcd_cli.visits import DirectoryVisits, is_excluded
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Iterator
 
-    import pytest
     from click.testing import CliRunner
 
     from pcd_cli.catalog import ProjectCatalog
@@ -136,8 +138,6 @@ def test_real_zoxide_import(
 ) -> None:
     import shutil
 
-    import pytest
-
     executable = shutil.which("zoxide")
     if not executable:
         pytest.skip("zoxide executable unavailable")
@@ -155,8 +155,6 @@ def test_real_zoxide_import(
 def test_directory_history_initialization_and_future_schema(tmp_path: Path) -> None:
     import sqlite3
     from contextlib import closing
-
-    import pytest
 
     store = DirectoryVisits(tmp_path / "state.sqlite3")
     with closing(sqlite3.connect(store.path)) as writer:
@@ -289,7 +287,6 @@ def test_legacy_import_adds_to_existing_sqlite_once_and_preserves_resume(tmp_pat
 def test_legacy_import_and_schema_upgrade_roll_back_together(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pytest
 
     child = tmp_path / "repo" / "child"
     store = DirectoryVisits(tmp_path / "directories.sqlite3")
@@ -331,7 +328,6 @@ def test_project_only_visit_does_not_change_tracked_resume_order(
 def test_first_migration_failure_leaves_retryable_empty_database(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import pytest
 
     child = tmp_path / "child"
     store = DirectoryVisits(tmp_path / "directories.sqlite3")
@@ -367,3 +363,101 @@ def test_out_of_order_visits_do_not_move_recency_backwards(
     store.record(child)
     assert store.entries()[child].used_at == 20
     assert store.entries()[child].count == 2
+
+
+@pytest.mark.parametrize("query", ["", "item", "item-0000"])
+def test_slow_candidate_consumer_does_not_block_concurrent_visits(
+    tmp_path: Path, query: str
+) -> None:
+    store = DirectoryVisits(tmp_path / "directories.sqlite3")
+    paths = [tmp_path / f"item-{number:04}" for number in range(1050)]
+    store.merge(dict.fromkeys(paths, 1.0))
+    stream = store.candidates(query)
+    first = next(stream)
+    assert first[0] == str(paths[0])
+    # A live directory check may stall here indefinitely. Recording another
+    # shell's visit must commit while the candidate consumer is paused.
+    with ThreadPoolExecutor(1) as pool:
+        pending = pool.submit(store.record, paths[0])
+        try:
+            pending.result(timeout=1)
+            remaining = list(stream)
+        finally:
+            stream.close()
+    expected = paths[:1] if query == "item-0000" else paths
+    assert [first[0], *(row[0] for row in remaining)] == list(map(str, expected))
+    assert store.usage()[paths[0]].count == 1
+
+
+def test_usage_input_iterator_does_not_hold_a_history_read_lock(tmp_path: Path) -> None:
+    store = DirectoryVisits(tmp_path / "directories.sqlite3")
+    first, second = tmp_path / "first", tmp_path / "second"
+    store.record(first)
+    store.record(second)
+    with ThreadPoolExecutor(1) as pool:
+
+        def paths() -> Iterator[Path]:
+            yield first
+            # The consumer must not open its history transaction until the
+            # complete input batch has been collected.
+            pool.submit(store.record, first).result(timeout=1)
+            yield second
+
+        result = store.usage_for(paths())
+    assert result[first].count == 2
+    assert result[second].count == 1
+
+
+@pytest.mark.parametrize("operation", ["revision", "usage", "candidates", "resume"])
+def test_history_filesystem_read_errors_have_a_distinct_type(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    from pcd_cli.visits import DirectoryHistoryError
+
+    store = DirectoryVisits(tmp_path / "directories.sqlite3")
+    original = Path.stat
+
+    def denied(path: Path, *, follow_symlinks: bool = True) -> object:
+        if path == store.path:
+            raise PermissionError("history state denied")
+        return original(path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", denied)
+    with pytest.raises(DirectoryHistoryError, match="history state denied"):
+        if operation == "revision":
+            store.revision()
+        elif operation == "usage":
+            store.usage()
+        elif operation == "candidates":
+            list(store.candidates())
+        else:
+            store.resume(tmp_path)
+
+
+def test_history_directory_creation_errors_have_a_distinct_type(tmp_path: Path) -> None:
+    from pcd_cli.visits import DirectoryHistoryError
+
+    parent = tmp_path / "not-a-directory"
+    parent.write_text("file", encoding="utf-8")
+    store = DirectoryVisits(parent / "directories.sqlite3")
+    with pytest.raises(DirectoryHistoryError):
+        store.record(tmp_path)
+
+
+@pytest.mark.parametrize("value", [None, "invalid", -1, 0.5])
+def test_invalid_history_revision_has_a_distinct_type(
+    tmp_path: Path, value: str | int | float | None
+) -> None:
+    from pcd_cli.visits import DirectoryHistoryError
+
+    store = DirectoryVisits(tmp_path / "directories.sqlite3")
+    store.record(tmp_path)
+    with closing(sqlite3.connect(store.path)) as db, db:
+        if value is None:
+            db.execute("DELETE FROM history_metadata WHERE key='revision'")
+        else:
+            db.execute("UPDATE history_metadata SET value=? WHERE key='revision'", (value,))
+    with pytest.raises(DirectoryHistoryError, match="Invalid directory history revision"):
+        store.revision()
+    with pytest.raises(DirectoryHistoryError, match="Invalid directory history revision"):
+        store.inspect()

@@ -6,7 +6,7 @@ import click
 @click.command("doctor")
 @click.pass_context
 def doctor_command(ctx: click.Context) -> None:
-    """Check config, cache, paths, and detectable shell integration without changes."""
+    """Check config, project cache, visit history, paths and shell integration."""
     from pcd_cli.diagnostics import diagnose
     from pcd_cli.display import terminal_text
     from pcd_cli.filesystem import ApplicationPaths

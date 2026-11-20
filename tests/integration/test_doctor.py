@@ -14,6 +14,7 @@ from pcd_cli.filesystem import ApplicationPaths
 from pcd_cli.integrations.shell import ConfiguredShell, Shell, ShellIntegrationError
 from pcd_cli.models import Project, ProjectSource
 from pcd_cli.storage import SQLiteProjectStore
+from pcd_cli.visits import DirectoryVisits
 
 if TYPE_CHECKING:
     from click.testing import CliRunner
@@ -361,3 +362,105 @@ def test_doctor_integrity_check_failure(runner: CliRunner) -> None:
 
     assert result.exit_code == 1
     assert "SQLite integrity check failed" in result.output
+
+
+def test_doctor_directory_history_is_read_only(runner: CliRunner, tmp_path: Path) -> None:
+    paths = healthy_files()
+    DirectoryVisits(paths.history).record(tmp_path)
+    before = snapshot(tmp_path)
+
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert "OK: History: 1 visit record(s); integrity verified" in result.output
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_doctor_retains_legacy_history_schema(
+    runner: CliRunner, tmp_path: Path, version: int
+) -> None:
+    paths = healthy_files()
+    paths.history.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(paths.history)) as db, db:
+        db.execute("""CREATE TABLE visits(identity TEXT PRIMARY KEY,path TEXT,
+            count INTEGER,used REAL,preference REAL)""")
+        if version == 2:
+            db.execute("ALTER TABLE visits ADD COLUMN learned INTEGER")
+            db.execute("ALTER TABLE visits ADD COLUMN tracked_used REAL")
+            db.execute("CREATE TABLE history_metadata(key TEXT PRIMARY KEY)")
+        db.execute(f"PRAGMA user_version={version}")
+    paths.history.with_name("history.json").write_text("{}", encoding="utf-8")
+    before = snapshot(tmp_path)
+
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert "legacy schema retained" in result.output
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("damage", ["bytes", "version", "schema", "integrity", "revision"])
+def test_doctor_reports_broken_history_without_changing_it(
+    runner: CliRunner, tmp_path: Path, damage: str
+) -> None:
+    paths = healthy_files()
+    DirectoryVisits(paths.history).record(tmp_path)
+    if damage == "bytes":
+        paths.history.write_bytes(b"broken history database")
+    else:
+        with closing(sqlite3.connect(paths.history)) as db, db:
+            if damage == "version":
+                db.execute("PRAGMA user_version=999")
+            elif damage == "schema":
+                db.execute("DROP INDEX visits_by_name")
+            elif damage == "revision":
+                db.execute("DELETE FROM history_metadata WHERE key='revision'")
+            else:
+                db.execute("CREATE TABLE invalid(value INTEGER)")
+                db.execute("INSERT INTO invalid VALUES(NULL)")
+                db.execute("PRAGMA writable_schema=ON")
+                db.execute(
+                    "UPDATE sqlite_master SET sql='CREATE TABLE invalid(value INTEGER "
+                    "NOT NULL)' WHERE name='invalid'"
+                )
+    before = snapshot(tmp_path)
+
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code == 1, result.output
+    assert "ISSUE: History:" in result.output
+    assert "OK: Cache:" in result.output
+    assert snapshot(tmp_path) == before
+
+
+def test_doctor_retains_legacy_only_history(runner: CliRunner, tmp_path: Path) -> None:
+    paths = healthy_files()
+    paths.history.parent.mkdir(parents=True, exist_ok=True)
+    paths.history.with_name("history.json").write_text("{}", encoding="utf-8")
+    before = snapshot(tmp_path)
+
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert "OK: History: Legacy history at" in result.output
+    assert "not migrated" in result.output
+    assert snapshot(tmp_path) == before
+    assert not paths.history.exists()
+
+
+def test_doctor_rejects_history_wal_without_sidecar_writes(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    paths = healthy_files()
+    DirectoryVisits(paths.history).record(tmp_path)
+    with closing(sqlite3.connect(paths.history)) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+    before = snapshot(tmp_path)
+
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code == 1, result.output
+    assert "ISSUE: History:" in result.output
+    assert "unsupported WAL" in result.output
+    assert snapshot(tmp_path) == before

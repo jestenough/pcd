@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import heapq
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from itertools import chain, islice
 from pathlib import Path
@@ -104,6 +104,31 @@ def lookup_snapshot[Reference](
     snapshot: ProjectSnapshot[Reference],
     request: LookupRequest,
     load_usage: UsageLoader | None = None,
+) -> LookupResult:
+    try:
+        return _lookup_snapshot(snapshot, request, load_usage)
+    except OSError as exc:
+        import sys
+
+        from pcd_cli.display import terminal_text
+        from pcd_cli.visits import DirectoryHistoryError
+
+        if not isinstance(exc, DirectoryHistoryError):
+            raise
+        print(
+            f"Warning: {terminal_text(str(exc))}. Searching registered projects only.",
+            file=sys.stderr,
+        )
+        project_request = replace(request, directories=None, directory_entries=None, usage_for=None)
+        result = _lookup_snapshot(snapshot, project_request, None)
+        # Invalidate cursors from the previous, history-ranked result set.
+        return replace(result, generation=~snapshot.generation)
+
+
+def _lookup_snapshot[Reference](
+    snapshot: ProjectSnapshot[Reference],
+    request: LookupRequest,
+    load_usage: UsageLoader | None,
 ) -> LookupResult:
     needle = request.query.casefold()
     if (

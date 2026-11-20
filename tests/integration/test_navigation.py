@@ -28,6 +28,22 @@ def test_shell_fast_path_respects_command_names() -> None:
     assert cli.commands.keys() == entrypoint._COMMANDS
 
 
+def test_resume_opens_project_root_when_history_is_unreadable(
+    projects: ProjectCatalog, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "alpha"
+    target.mkdir()
+    assert runner.invoke(cli, ["add", str(target)]).exit_code == 0
+    history = projects.history.path
+    history.parent.mkdir(parents=True, exist_ok=True)
+    history.write_bytes(b"invalid history")
+    monkeypatch.setenv("PCD_SHELL", "1")
+    result = runner.invoke(cli, ["alpha", "--resume"])
+    assert result.exit_code == 10 and result.stdout.strip() == str(target.resolve())
+    assert "Opening project root" in result.stderr
+    assert history.read_bytes() == b"invalid history"
+
+
 def test_cached_shell_jump_only_emits_path(
     runner: CliRunner,
     tmp_path: Path,
@@ -151,12 +167,12 @@ def test_select_project_opens_picker_for_multiple_matches(
     assert select_project(projects, LookupResult(list(matches), len(matches)), "") is matches[1]
 
 
-@pytest.mark.parametrize("query", ["same", "sam"])
+@pytest.mark.parametrize("args", [["same"], ["sam"], ["info", "same"], ["--project", "same"]])
 def test_navigation_ranks_candidates_without_loading_full_history(
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    query: str,
+    args: list[str],
 ) -> None:
     for name in ("first", "second"):
         path = tmp_path / name
@@ -179,7 +195,7 @@ def test_navigation_ranks_candidates_without_loading_full_history(
     monkeypatch.setattr(UsageHistory, "record", lambda _history, _path: None)
     monkeypatch.setattr(ProjectPicker, "run", run)
 
-    result = runner.invoke(cli, [query])
+    result = runner.invoke(cli, args)
 
     assert result.exit_code == 0
     assert loads == 0

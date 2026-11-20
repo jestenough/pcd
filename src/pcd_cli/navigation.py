@@ -51,13 +51,10 @@ def select_project(
     from pcd_cli.lookup import LookupMode
     from pcd_cli.picker import ProjectPicker
 
-    usage = result.usage
-
     def resolve(request: LookupRequest) -> LookupResult:
         return catalog.lookup(
             request,
             refresh_on_miss=False,
-            usage=usage,
             include_directories=not exact_only,
         )
 
@@ -87,9 +84,13 @@ def _open_project(catalog: ProjectCatalog, project: Project, *, resume: bool = F
     destination = project.path
     if project.path.is_dir():
         if resume:
-            from pcd_cli.visits import DirectoryVisits, is_excluded
+            from pcd_cli.visits import DirectoryHistoryError, DirectoryVisits, is_excluded
 
-            latest = DirectoryVisits(catalog.history.path).resume(project.path)
+            try:
+                latest = DirectoryVisits(catalog.history.path).resume(project.path)
+            except DirectoryHistoryError as exc:
+                click.echo(f"Warning: {terminal_text(str(exc))}. Opening project root.", err=True)
+                latest = None
             if latest is not None:
                 resolved = canonical_path(latest)
                 if resolved != project.path and not resolved.is_relative_to(project.path):

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import stat
 import time
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from fnmatch import fnmatch
-from itertools import chain, islice
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,9 +17,17 @@ from pcd_cli.filesystem import database_uri
 from pcd_cli.models import ProjectUsage
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Generator, Iterator, Mapping
 
     from pcd_cli.lookup import DirectoryEntry
+
+
+class DirectoryHistoryError(OSError):
+    """An unavailable navigation-history store, distinct from project-cache errors."""
+
+
+class _HistoryNotFoundError(FileNotFoundError):
+    """Optional history has not been created yet."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,13 +68,16 @@ class DirectoryVisits:
 
     @contextmanager
     def _connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
-        if not write and not self.path.exists():
-            if self.path.with_name("history.json").is_file():
-                with self._connection(write=True) as db:
-                    yield db
-                return
-            raise FileNotFoundError(self.path)
         try:
+            if not write:
+                try:
+                    self.path.stat()
+                except FileNotFoundError:
+                    if _legacy_exists(self.path):
+                        with self._connection(write=True) as db:
+                            yield db
+                        return
+                    raise _HistoryNotFoundError(self.path) from None
             if write:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 db = sqlite3.connect(self.path)
@@ -81,12 +93,12 @@ class DirectoryVisits:
                 ):
                     if not write:
                         # A concurrent first writer has not yet published its schema.
-                        if self.path.with_name("history.json").is_file():
+                        if _legacy_exists(self.path):
                             db.rollback()
                             with self._connection(write=True) as initialized:
                                 yield initialized
                             return
-                        raise FileNotFoundError(self.path)
+                        raise _HistoryNotFoundError(self.path)
                     db.execute("""CREATE TABLE visits (
                         identity TEXT PRIMARY KEY, path TEXT NOT NULL,
                         count INTEGER NOT NULL DEFAULT 0, used REAL NOT NULL DEFAULT 0,
@@ -141,8 +153,55 @@ class DirectoryVisits:
                         WHERE learned=1""")
                     db.execute("PRAGMA user_version = 3")
                 yield db
-        except sqlite3.Error as exc:
-            raise OSError(f"Cannot access directory history: {exc}") from exc
+        except (_HistoryNotFoundError, DirectoryHistoryError):
+            raise
+        except (sqlite3.Error, OSError) as exc:
+            raise DirectoryHistoryError(f"Cannot access directory history: {exc}") from exc
+
+    def inspect(self) -> tuple[int, int]:
+        """Check existing history without migrating it or creating SQLite sidecars."""
+        # Match the cache's inspection policy. Connecting to a WAL database can
+        # create -shm even with mode=ro, and immutable=1 would ignore live WAL.
+        try:
+            with self.path.open("rb") as stream:
+                header = stream.read(20)
+        except FileNotFoundError:
+            raise
+        except OSError as exc:
+            raise DirectoryHistoryError(f"Cannot inspect directory history: {exc}") from exc
+        if len(header) == 20 and (header[18] == 2 or header[19] == 2):
+            raise DirectoryHistoryError(
+                "Directory history uses unsupported WAL journaling; inspection could create "
+                "sidecars. Restore DELETE journal mode with SQLite while pcd is idle"
+            )
+        try:
+            with closing(sqlite3.connect(database_uri(self.path) + "?mode=ro", uri=True)) as db:
+                db.execute("PRAGMA query_only = ON")
+                db.execute("PRAGMA trusted_schema = OFF")
+                db.execute("BEGIN")
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version not in (1, 2, 3):
+                    raise DirectoryHistoryError(f"Unsupported directory history schema: {version}")
+                if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                    raise DirectoryHistoryError("SQLite integrity check failed")
+                columns = "identity,path,count,used,preference"
+                if version >= 2:
+                    columns += ",learned,tracked_used"
+                    db.execute("SELECT key FROM history_metadata LIMIT 0").close()
+                if version >= 3:
+                    columns += ",name_key,path_key"
+                    _read_revision(db)
+                    db.execute(
+                        "SELECT name_key FROM visits INDEXED BY visits_by_name "
+                        "WHERE learned=1 LIMIT 0"
+                    ).close()
+                db.execute("SELECT " + columns + " FROM visits LIMIT 0").close()
+                count = db.execute("SELECT count(*) FROM visits").fetchone()[0]
+                return version, count
+        except DirectoryHistoryError:
+            raise
+        except (sqlite3.Error, OSError) as exc:
+            raise DirectoryHistoryError(f"Cannot inspect directory history: {exc}") from exc
 
     def _import_legacy(self, db: sqlite3.Connection) -> None:
         from pcd_cli.history import load_legacy
@@ -190,11 +249,8 @@ class DirectoryVisits:
         """A committed ranking revision, read before query candidates and usage."""
         try:
             with self._connection() as db:
-                row = db.execute(
-                    "SELECT value FROM history_metadata WHERE key='revision'"
-                ).fetchone()
-                return int(row[0])
-        except FileNotFoundError:
+                return _read_revision(db)
+        except _HistoryNotFoundError:
             return 0
 
     def usage(self) -> dict[Path, ProjectUsage]:
@@ -206,25 +262,28 @@ class DirectoryVisits:
                         "SELECT path,count,used,preference FROM visits"
                     )
                 }
-        except FileNotFoundError:
+        except _HistoryNotFoundError:
             return {}
 
     def usage_for(self, paths: Iterator[Path]) -> dict[Path, ProjectUsage]:
         """Fetch candidate usage through the primary key, without reading all visits."""
         result: dict[Path, ProjectUsage] = {}
         try:
-            with self._connection() as db:
-                while batch := list(islice(paths, 500)):
-                    identities = {os.path.normcase(str(path)): path for path in batch}
-                    placeholders = ",".join("?" for _ in identities)
-                    for identity, count, used, preference in db.execute(
+            # Candidate iteration can perform slow filesystem checks; never
+            # keep a history transaction open while advancing that iterator.
+            while batch := list(islice(paths, 500)):
+                identities = {os.path.normcase(str(path)): path for path in batch}
+                placeholders = ",".join("?" for _ in identities)
+                with self._connection() as db:
+                    rows = db.execute(
                         "SELECT identity,count,used,preference FROM visits WHERE identity IN ("
                         + placeholders
                         + ")",
                         tuple(identities),
-                    ):
-                        result[identities[identity]] = ProjectUsage(used, count, preference)
-        except FileNotFoundError:
+                    ).fetchall()
+                for identity, count, used, preference in rows:
+                    result[identities[identity]] = ProjectUsage(used, count, preference)
+        except _HistoryNotFoundError:
             pass
         return result
 
@@ -234,26 +293,46 @@ class DirectoryVisits:
             for path, _, count, used, preference, _ in self.candidates(query or "")
         }
 
-    def candidates(self, query: str = "") -> Iterator[DirectoryEntry]:
-        """Stream stored ranking metadata without constructing paths or a full map."""
+    def candidates(self, query: str = "") -> Generator[DirectoryEntry]:
+        """Read bounded batches, releasing SQLite locks before live path checks."""
+        needle = query.casefold()
+        groups: tuple[tuple[str, tuple[str, ...]], ...]
+        if needle:
+            clause, parameters = _candidate_clause(needle)
+            groups = (
+                (" AND name_key=?", (needle,)),
+                (" AND name_key != ?" + clause, (needle, *parameters)),
+            )
+        else:
+            groups = (("", ()),)
         try:
             with self._connection() as db:
-                sql = "SELECT path,name_key,count,used,preference,identity FROM visits WHERE learned=1"
-                needle = query.casefold()
-                if needle:
-                    # Exact names use the partial index while retaining weaker
-                    # matches. Identity order clusters siblings for live checks.
-                    clause, parameters = _candidate_clause(needle)
-                    exact = db.execute(sql + " AND name_key=? ORDER BY identity", (needle,))
-                    rows = db.execute(
-                        sql + " AND name_key != ?" + clause + " ORDER BY identity",
-                        (needle, *parameters),
-                    )
-                    candidates = chain(exact, rows)
-                else:
-                    candidates = chain(db.execute(sql + " ORDER BY identity"))
-                yield from candidates
-        except FileNotFoundError:
+                # Finish schema inspection/migration, then let each fully fetched
+                # SELECT own its short read transaction. Reuse the connection;
+                # reopening and validating every batch hurts broad-search latency.
+                db.commit()
+                for clause, parameters in groups:
+                    after: str | None = None
+                    while True:
+                        sql = (
+                            "SELECT path,name_key,count,used,preference,identity FROM visits "
+                            "WHERE learned=1" + clause
+                        )
+                        boundary = " AND identity > ?" if after is not None else ""
+                        values = (*parameters, after) if after is not None else parameters
+                        with closing(
+                            db.execute(sql + boundary + " ORDER BY identity LIMIT 500", values)
+                        ) as cursor:
+                            rows = cursor.fetchall()
+                        if not rows:
+                            break
+                        # No statement or transaction survives this yield: a
+                        # consumer may spend seconds checking offline paths.
+                        yield from rows
+                        after = rows[-1][5]
+                        if len(rows) < 500:
+                            break
+        except _HistoryNotFoundError:
             return
 
     def merge(self, scores: Mapping[Path, float]) -> None:
@@ -290,9 +369,23 @@ class DirectoryVisits:
                     ORDER BY tracked_used DESC, identity LIMIT 1""",
                     (prefix, end, os.path.normcase(str(root))),
                 ).fetchone()
-        except FileNotFoundError:
+        except _HistoryNotFoundError:
             return None
         return Path(row[0]) if row else None
+
+
+def _read_revision(db: sqlite3.Connection) -> int:
+    row = db.execute("SELECT value FROM history_metadata WHERE key='revision'").fetchone()
+    if row is None or not isinstance(row[0], int) or row[0] < 0:
+        raise DirectoryHistoryError("Invalid directory history revision")
+    return row[0]
+
+
+def _legacy_exists(path: Path) -> bool:
+    try:
+        return stat.S_ISREG(path.with_name("history.json").stat().st_mode)
+    except FileNotFoundError:
+        return False
 
 
 def _name_key(path: str) -> str:

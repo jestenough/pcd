@@ -14,7 +14,7 @@ Command reference
     pcd add [path] [--name NAME]  Register a directory or restore an excluded project
     pcd remove <project>         Unregister or exclude a project, keeping its directory
     pcd info <project>           Show paths, source, discovery routes and status
-    pcd doctor                   Check configuration, cache, paths and shell integration
+    pcd doctor                   Check configuration, cache, history, paths and shell integration
 
     pcd init                     Add the current directory as a scan root
     pcd uninit                   Remove the current directory from scan roots
@@ -72,7 +72,7 @@ it. Use ``--name NAME`` to restore it as a manual registration. An existing dire
 outside discovery is also restored as manual. Refresh drops vanished discoveries
 from the cache and keeps user-defined roots, manual registrations and exclusions.
 
-Run ``pcd doctor`` for a read-only check of configuration, cache integrity, roots,
+Run ``pcd doctor`` for a read-only check of configuration, cache and history integrity, roots,
 project directories, stale exclusions, the executable on PATH, and shell integration.
 It also reports excluded projects still in the cache and manual registrations
 that disagree with the cache. It returns status 1 when it finds an issue.
@@ -102,6 +102,10 @@ Importing merges by canonical path. An imported score expresses preference;
 it does not increment the visit count. Importing the same data twice preserves
 the same ranking. Imported directories become searchable without a prior pcd
 visit; resume uses actual recorded visits.
+
+If navigation history is unreadable, pcd warns and searches the registered
+projects by text. A resume request opens the selected project root. Run
+``pcd doctor`` to inspect the history before attempting recovery.
 
 Search is case-insensitive: exact names take priority, then prefix, substring,
 and fuzzy matches. ``--project`` performs exact-name lookup only.

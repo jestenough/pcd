@@ -24,6 +24,27 @@ if TYPE_CHECKING:
     from pcd_cli.lookup import DirectoryEntry
 
 
+@pytest.mark.parametrize("query", ["api", "ap"])
+def test_unreadable_history_falls_back_to_registered_projects(
+    projects: ProjectCatalog, tmp_path: Path, capsys: pytest.CaptureFixture[str], query: str
+) -> None:
+    items = [
+        Project("api", tmp_path / name, tmp_path / name, ProjectSource.MANUAL)
+        for name in ("second", "first")
+    ]
+    projects.cache.save(items)
+    history = projects.history.path
+    history.parent.mkdir(parents=True, exist_ok=True)
+    history.write_bytes(b"damaged navigation history")
+
+    result = projects.resolve(query)
+
+    assert result.matches == items[::-1] and result.total == 2
+    assert result.generation < 0
+    assert "Searching registered projects only" in capsys.readouterr().err
+    assert history.read_bytes() == b"damaged navigation history"
+
+
 @pytest.mark.parametrize(
     "query",
     [

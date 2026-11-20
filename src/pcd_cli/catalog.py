@@ -124,20 +124,16 @@ class ProjectCatalog:
                 if not is_excluded(Path(entry[0]), excluded):
                     yield entry
 
-        if include_directories:
+        if request.usage_for is None and (include_directories or usage is None):
             from pcd_cli.visits import DirectoryVisits
 
             def candidate_usage(paths: Iterator[Path]) -> Mapping[Path, ProjectUsage]:
                 capture_revision()
                 return DirectoryVisits(self.history.path).usage_for(paths)
 
-            # Each picker query needs its own candidate set; a previous narrowed
-            # set cannot answer a later edit which broadens the query.
-            request = replace(
-                request,
-                directory_entries=directories,
-                usage_for=candidate_usage,
-            )
+            request = replace(request, usage_for=candidate_usage)
+        if include_directories:
+            request = replace(request, directory_entries=directories)
 
         def has_configured_projects() -> bool:
             settings = self.config.load()
@@ -150,7 +146,7 @@ class ProjectCatalog:
             refresh_on_miss=refresh_on_miss,
             usage=usage,
         )
-        if history_revision is not None:
+        if history_revision is not None and result.generation >= 0:
             # Keep the revision captured before any candidates/usage were read:
             # a concurrent visit invalidates the next cursor, rather than making
             # stale ranking appear to belong to the new history generation.

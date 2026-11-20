@@ -11,6 +11,7 @@ from pcd_cli.config import Config, InvalidConfigError
 from pcd_cli.integrations.shell import ConfiguredShell, ShellIntegrationError, ShellIntegrationState
 from pcd_cli.models import ProjectSource
 from pcd_cli.storage import SQLiteProjectStore
+from pcd_cli.visits import DirectoryVisits
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -76,6 +77,24 @@ def _cache(path: Path, findings: list[Finding]) -> list[Project] | None:
     return None
 
 
+def _history(path: Path) -> Finding:
+    try:
+        version, count = DirectoryVisits(path).inspect()
+    except FileNotFoundError:
+        legacy = path.with_name("history.json")
+        try:
+            legacy.stat()
+        except FileNotFoundError:
+            return Finding("OK", "History", "Not created yet")
+        except OSError as exc:
+            return Finding("ISSUE", "History", f"Cannot inspect legacy history: {exc}")
+        return Finding("OK", "History", f"Legacy history at {legacy}; not migrated")
+    except OSError as exc:
+        return Finding("ISSUE", "History", f"Cannot read {path}: {exc}")
+    migration = "; legacy schema retained" if version < 3 else ""
+    return Finding("OK", "History", f"{count} visit record(s); integrity verified{migration}")
+
+
 def _shell() -> Finding:
     try:
         integration = ConfiguredShell.detect()
@@ -126,6 +145,7 @@ def diagnose(paths: ApplicationPaths) -> list[Finding]:
     findings: list[Finding] = []
     settings = _configuration(paths.config, findings)
     projects = _cache(paths.cache, findings)
+    findings.append(_history(paths.history))
     if settings is not None and projects is not None:
         findings.extend(_reconcile(settings, projects))
     if settings is not None:
