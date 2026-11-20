@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, replace
 from typing import Self, TYPE_CHECKING
@@ -7,15 +8,15 @@ from typing import Self, TYPE_CHECKING
 from pcd_cli.config import Config
 from pcd_cli.filesystem import ApplicationPaths, canonical_path
 from pcd_cli.history import UsageHistory
-from pcd_cli.models import ProjectSource
+from pcd_cli.models import ProjectSource, ProjectUsage
 from pcd_cli.scanner import ProjectScanner
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
     from pathlib import Path
 
-    from pcd_cli.lookup import LookupRequest, LookupResult, ProjectStore
-    from pcd_cli.models import Project, ProjectSettings, ProjectUsage
+    from pcd_cli.lookup import DirectoryEntry, LookupRequest, LookupResult, ProjectStore
+    from pcd_cli.models import Project, ProjectSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +82,7 @@ class ProjectCatalog:
         from pcd_cli.lookup import LookupMode, LookupRequest
 
         mode = LookupMode.EXACT if exact_only else LookupMode.RESOLVE
-        return self.lookup(LookupRequest(query, mode))
+        return self.lookup(LookupRequest(query, mode), include_directories=not exact_only)
 
     def lookup(
         self,
@@ -89,14 +90,79 @@ class ProjectCatalog:
         *,
         refresh_on_miss: bool = True,
         usage: Mapping[Path, ProjectUsage] | None = None,
+        include_directories: bool = False,
     ) -> LookupResult:
         from pcd_cli.resolver import ProjectResolver
 
-        return ProjectResolver(self.cache, self.refresh, self.history.load).resolve(
+        history_revision: int | None = None
+
+        def capture_revision() -> None:
+            nonlocal history_revision
+            if history_revision is None:
+                from pcd_cli.visits import DirectoryVisits
+
+                history_revision = DirectoryVisits(self.history.path).revision()
+
+        def directories() -> Iterator[DirectoryEntry]:
+            from itertools import chain
+            from pathlib import Path
+
+            from pcd_cli.visits import DirectoryVisits, is_excluded
+
+            capture_revision()
+            entries = DirectoryVisits(self.history.path).candidates(request.query)
+            first = next(entries, None)
+            if first is None:
+                return
+            excluded = self.config.load().excluded_projects
+            has_exclusions = bool(excluded or os.environ.get("PCD_EXCLUDE_DIRS"))
+            candidates = chain((first,), entries)
+            if not has_exclusions:
+                yield from candidates
+                return
+            for entry in candidates:
+                if not is_excluded(Path(entry[0]), excluded):
+                    yield entry
+
+        if include_directories:
+            from pcd_cli.visits import DirectoryVisits
+
+            def candidate_usage(paths: Iterator[Path]) -> Mapping[Path, ProjectUsage]:
+                capture_revision()
+                return DirectoryVisits(self.history.path).usage_for(paths)
+
+            # Each picker query needs its own candidate set; a previous narrowed
+            # set cannot answer a later edit which broadens the query.
+            request = replace(
+                request,
+                directory_entries=directories,
+                usage_for=candidate_usage,
+            )
+        result = ProjectResolver(self.cache, self.refresh, self.history.load).resolve(
             request,
             refresh_on_miss=refresh_on_miss,
             usage=usage,
         )
+        if history_revision is not None:
+            # Keep the revision captured before any candidates/usage were read:
+            # a concurrent visit invalidates the next cursor, rather than making
+            # stale ranking appear to belong to the new history generation.
+            return replace(result, generation=(result.generation << 64) + history_revision)
+        return result
+
+    def directory_usage(self, query: str | None = None) -> dict[Path, ProjectUsage]:
+        from pcd_cli.visits import DirectoryVisits, is_excluded
+
+        entries = DirectoryVisits(self.history.path).entries(query)
+        if not entries:
+            return {}
+        excluded = self.config.load().excluded_projects
+        has_exclusions = bool(excluded or os.environ.get("PCD_EXCLUDE_DIRS"))
+        return {
+            path: ProjectUsage(visit.used_at, visit.count, visit.preference)
+            for path, visit in entries.items()
+            if not has_exclusions or not is_excluded(path, excluded)
+        }
 
     def refresh(self) -> list[Project]:
         """Rebuild the catalog from config and scan, then publish it to the cache."""

@@ -48,6 +48,7 @@ register an ordinary directory, and pcd refresh to rescan existing roots.
 COMMON COMMANDS
 ---------------
     pcd <project>                Find a project and jump to it
+    pcd <project> --resume       Return to its last tracked subdirectory
     pcd add [path] [--name NAME]  Register a directory or restore an excluded project
     pcd remove <project>         Unregister or exclude a project, keeping its directory
     pcd info <project>           Show paths, source, discovery routes and status

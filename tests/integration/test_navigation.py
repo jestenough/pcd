@@ -108,7 +108,7 @@ def test_select_project_opens_picker_for_multiple_matches(
 
 
 @pytest.mark.parametrize("query", ["same", "sam"])
-def test_navigation_reuses_search_history_in_picker(
+def test_navigation_ranks_candidates_without_loading_full_history(
     runner: CliRunner,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -138,7 +138,7 @@ def test_navigation_reuses_search_history_in_picker(
     result = runner.invoke(cli, [query])
 
     assert result.exit_code == 0
-    assert loads == 1
+    assert loads == 0
 
 
 def test_cancel_multiple_does_not_refresh(

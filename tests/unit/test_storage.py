@@ -103,6 +103,21 @@ def test_missing_and_empty_are_distinct(store: SQLiteProjectStore) -> None:
     assert result is not None and result.matches == [] and result.total == 0
 
 
+@pytest.mark.parametrize("query", ["pjt009", "missing"])
+def test_selective_search_reads_history_only_to_rank_competing_matches(
+    store: SQLiteProjectStore, tmp_path: Path, query: str
+) -> None:
+    target = item(tmp_path / "last", "project-009")
+    store.save([item(tmp_path / "first", "project-001"), target])
+
+    def unexpected_history_read() -> dict[Path, ProjectUsage]:
+        pytest.fail("A sole match or miss has no competing project to rank")
+
+    result = store.lookup(LookupRequest(query, directories=dict), unexpected_history_read)
+    assert result is not None
+    assert result.matches == ([target] if query == "pjt009" else [])
+
+
 def test_exact_uses_index_and_one_decode(
     store: SQLiteProjectStore,
     tmp_path: Path,
@@ -156,7 +171,7 @@ def test_fuzzy_decodes_only_window(
     monkeypatch.setattr(SQLiteSnapshot, "read", read)
     result = store.lookup(LookupRequest("ap"))
     assert result is not None and result.total == 2000
-    assert result.matches == projects[:100]
+    assert result.matches == sorted(projects, key=lambda project: str(project.path))[:100]
     assert reads == 100
 
 

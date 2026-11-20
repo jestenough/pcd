@@ -62,6 +62,7 @@ def package_version() -> str:
 
 
 @click.group(cls=ProjectCommandGroup, invoke_without_command=True)
+@click.option("--resume", is_flag=True, help="With --project, open its last visited subdirectory.")
 @click.option(
     "--project",
     "project_name",
@@ -72,10 +73,12 @@ def package_version() -> str:
     lambda ctx: f"{ctx.find_root().info_name}, version {package_version()}"
 )
 @click.pass_context
-def cli(ctx: click.Context, project_name: str | None) -> None:
+def cli(ctx: click.Context, project_name: str | None, resume: bool) -> None:
     """Jump to local projects by name."""
     if project_name is not None and ctx.invoked_subcommand is not None:
         raise click.UsageError("--project cannot be combined with a command")
+    if resume and project_name is None:
+        raise click.UsageError("Use pcd PROJECT --resume or pcd --project NAME --resume")
 
     if ctx.invoked_subcommand in ("shell", "doctor"):
         return
@@ -90,7 +93,7 @@ def cli(ctx: click.Context, project_name: str | None) -> None:
         click.echo(ctx.get_help())
         return
 
-    navigate_to_project(catalog, project_name, exact_only=True)
+    navigate_to_project(catalog, project_name, exact_only=True, resume=resume)
 
 
 for command in (

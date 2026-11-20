@@ -3,22 +3,24 @@
 from __future__ import annotations
 
 import heapq
+import os
 from dataclasses import dataclass
 from enum import StrEnum
-from itertools import chain
+from itertools import chain, islice
 from pathlib import Path
 from typing import Protocol, TYPE_CHECKING
 
-from pcd_cli.search import _score
+from pcd_cli.models import Project, ProjectSource, ProjectUsage
+from pcd_cli.search import score_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
-    from pcd_cli.models import Project, ProjectUsage
     from pcd_cli.search import ProjectRank
 
 type UsageLoader = Callable[[], Mapping[Path, ProjectUsage]]
-type DirectoryEntry = tuple[str, str, int, float, float, str]
+type CandidateUsageLoader = Callable[[Iterator[Path]], Mapping[Path, ProjectUsage]]
+type DirectoryLoader = Callable[[], Iterator[DirectoryEntry]]
 RESULT_LIMIT = 100
 
 
@@ -36,6 +38,9 @@ class LookupRequest:
     after: ProjectRank | None = None
     before: ProjectRank | None = None
     last: bool = False
+    directories: UsageLoader | None = None
+    usage_for: CandidateUsageLoader | None = None
+    directory_entries: DirectoryLoader | None = None
 
     def __post_init__(self) -> None:
         if self.limit is not None and self.limit < 1:
@@ -50,6 +55,10 @@ class LookupEntry[Reference]:
     name_key: str
     name_length: int
     path: str
+
+
+# Keep SQLite rows in their native representation until the ranked window is known.
+type DirectoryEntry = tuple[str, str, int, float, float, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,57 +117,127 @@ def lookup_snapshot[Reference](
         # candidate or retaining a second full catalog of metadata.
         matches = [snapshot.read(entry) for entry in snapshot.prefix(needle)]
         return LookupResult(matches, len(matches), generation=snapshot.generation)
-    recent = not needle and request.mode is LookupMode.RESOLVE
-    usage = None
     if request.mode is LookupMode.PREFIX:
-        entries = snapshot.prefix(needle)
-    elif recent:
-        entries = snapshot.records()
-    else:
+        return _rank_window(snapshot, request, snapshot.prefix(needle), None)
+
+    if needle or request.mode is LookupMode.EXACT:
         exact = snapshot.exact(needle)
         first = next(exact, None)
-        second = next(exact, None)
-        if first is not None and second is None:
-            entries = iter((first,))
-        elif first is not None and second is not None:
-            entries = chain((first, second), exact)
-            usage = {} if load_usage is None else load_usage()
-        elif request.mode is LookupMode.EXACT:
-            entries = iter(())
-        else:
-            entries = snapshot.records()
-            usage = {} if load_usage is None else load_usage()
-    if recent:
-        usage = {} if load_usage is None else load_usage()
+        if first is not None:
+            return _rank_window(snapshot, request, chain((first,), exact), load_usage)
+        if request.mode is LookupMode.EXACT:
+            return LookupResult([], 0, generation=snapshot.generation)
 
+    directories = None
+    if request.directory_entries is not None:
+        directories = request.directory_entries()
+    elif request.directories is not None:
+        directories = (
+            (
+                str(path),
+                path.name.casefold(),
+                usage.count,
+                usage.used_at,
+                usage.preference,
+                os.path.normcase(str(path)),
+            )
+            for path, usage in request.directories().items()
+        )
+    return _rank_window(snapshot, request, snapshot.records(), load_usage, directories)
+
+
+def _rank_window[Reference](
+    snapshot: ProjectSnapshot[Reference],
+    request: LookupRequest,
+    entries: Iterator[LookupEntry[Reference]],
+    load_usage: UsageLoader | None,
+    directories: Iterator[DirectoryEntry] | None = None,
+) -> LookupResult:
+    needle = request.query.casefold()
+    words = needle.split()
+    recent = not needle and request.mode is LookupMode.RESOLVE
+    # Retain identities only if we need to suppress learned copies of projects.
+    first_directory = next(directories, None) if directories is not None else None
+    registered: set[str] = set()
+
+    def scored_projects() -> Iterator[tuple[tuple[int, int], LookupEntry[Reference]]]:
+        for entry in entries:
+            if first_directory is not None:
+                registered.add(os.path.normcase(entry.path))
+            score = (0, 0) if recent else score_path(needle, entry.name_key, entry.path, words)
+            if score is not None:
+                yield score, entry
+
+    def scored_directories() -> Iterator[tuple[tuple[int, int], DirectoryEntry]]:
+        if first_directory is None or directories is None:
+            return
+        for row in chain((first_directory,), directories):
+            path, name, _, _, _, identity = row
+            if identity in registered:
+                continue
+            score = (0, 0) if recent else score_path(needle, name, path, words)
+            if score is not None:
+                yield score, row
+
+    def read(entry: LookupEntry[Reference] | DirectoryEntry) -> Project:
+        if isinstance(entry, LookupEntry):
+            return snapshot.read(entry)
+        path = Path(entry[0])
+        return Project(path.name, path, path, ProjectSource.MANUAL)
+
+    def all_scores() -> Iterator[tuple[tuple[int, int], LookupEntry[Reference] | DirectoryEntry]]:
+        yield from scored_projects()
+        if first_directory is not None:
+            from pcd_cli.live_directories import live_directories
+
+            yield from live_directories(scored_directories(), lambda item: item[1][0])
+
+    matches = all_scores()
+    initial = list(islice(matches, 2))
+    if len(initial) < 2 and request.after is None and request.before is None:
+        projects = [read(entry) for _, entry in initial]
+        return LookupResult(projects, len(projects), generation=snapshot.generation)
+    candidates = chain(initial, matches)
+    usage = load_usage() if load_usage and request.usage_for is None else None
     total = 0
     eligible = 0
     excluded_before = 0
 
-    def ranked() -> Iterator[tuple[ProjectRank, LookupEntry[Reference]]]:
+    def ranked() -> Iterator[tuple[ProjectRank, LookupEntry[Reference] | DirectoryEntry]]:
         nonlocal total, eligible, excluded_before
-        for entry in entries:
-            score = (0, 0) if recent else _score(needle, entry.name_key)
-            if score is None:
-                continue
-            item = usage.get(Path(entry.path)) if usage else None
-            rank: ProjectRank = (
-                score[0],
-                -score[1],
-                0.0 if item is None else -item.used_at,
-                0 if item is None else -item.count,
-                0 if recent else entry.name_length,
-                entry.name_key,
-                entry.path,
-            )
-            total += 1
-            if request.after is not None and rank <= request.after:
-                excluded_before += 1
-                continue
-            if request.before is not None and rank >= request.before:
-                continue
-            eligible += 1
-            yield rank, entry
+        while batch := list(islice(candidates, 500)):
+            batch_usage = usage
+            if request.usage_for and isinstance(batch[0][1], LookupEntry):
+                project_paths = (
+                    Path(entry.path) for _, entry in batch if isinstance(entry, LookupEntry)
+                )
+                batch_usage = request.usage_for(project_paths)
+            for score, entry in batch:
+                if isinstance(entry, LookupEntry):
+                    path = entry.path
+                    item = batch_usage.get(Path(path)) if batch_usage else None
+                    count, used, preference = (
+                        (item.count, item.used_at, item.preference) if item else (0, 0.0, 0.0)
+                    )
+                else:
+                    path, _, count, used, preference, _ = entry
+                rank: ProjectRank = (
+                    score[0],
+                    -score[1],
+                    -used if recent else -(count + preference),
+                    -float(count) if recent else -used,
+                    0,
+                    "",
+                    path,
+                )
+                total += 1
+                if request.after is not None and rank <= request.after:
+                    excluded_before += 1
+                    continue
+                if request.before is not None and rank >= request.before:
+                    continue
+                eligible += 1
+                yield rank, entry
 
     reverse = request.before is not None or request.last
     if request.limit is None:
@@ -169,8 +248,20 @@ def lookup_snapshot[Reference](
     else:
         selected = heapq.nsmallest(request.limit, ranked(), key=lambda item: item[0])
     offset = eligible - len(selected) if reverse else excluded_before
+    if request.usage_for is not None:
+        selected_usage: dict[Path, ProjectUsage] = {}
+        missing: list[Path] = []
+        for _, entry in selected:
+            if isinstance(entry, LookupEntry):
+                missing.append(Path(entry.path))
+            else:
+                path, _, count, used, preference, _ = entry
+                selected_usage[Path(path)] = ProjectUsage(used, count, preference)
+        if missing:
+            selected_usage.update(request.usage_for(iter(missing)))
+        usage = selected_usage
     return LookupResult(
-        [snapshot.read(entry) for _, entry in selected],
+        [read(entry) for _, entry in selected],
         total,
         offset,
         usage,

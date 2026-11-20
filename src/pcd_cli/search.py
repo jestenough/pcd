@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
     from pcd_cli.models import Project, ProjectUsage
 
-ProjectRank = tuple[int, int, float, int, int, str, str]
+ProjectRank = tuple[int, int, float, float, int, str, str]
 
 EXACT_WEIGHT = 16
 PREFIX_WEIGHT = 12
@@ -25,11 +25,12 @@ def rank_matches(
     usage: Mapping[Path, ProjectUsage] | None = None,
 ) -> list[Project]:
     needle = query.casefold()
+    words = needle.split()
     matches: list[tuple[ProjectRank, Project]] = []
 
     for project in projects:
         name = project.name.casefold()
-        score = _score(needle, name)
+        score = score_path(needle, name, str(project.path), words)
         if score is None:
             continue
 
@@ -40,10 +41,10 @@ def rank_matches(
         rank: ProjectRank = (
             match_kind,
             -points,
+            -(count + (0.0 if project_usage is None else project_usage.preference)),
             -used_at,
-            -count,
-            len(project.name),
-            name,
+            0,
+            "",
             str(project.path),
         )
         matches.append((rank, project))
@@ -63,7 +64,7 @@ def rank_recent(
         return (
             0.0 if project_usage is None else -project_usage.used_at,
             0 if project_usage is None else -project_usage.count,
-            project.name.casefold(),
+            "",
             str(project.path),
         )
 
@@ -105,3 +106,34 @@ def _score(query: str, name: str) -> tuple[int, int] | None:
 
     penalty = max(len(name) - len(query), 0) // 2
     return 3, points - penalty
+
+
+def score_path(query: str, name: str, path: str, words: list[str]) -> tuple[int, int] | None:
+    """Match separate words against distinct path components, in order."""
+    if query == name or len(words) < 2:
+        return _score(query, name)
+    components = path.replace("\\", "/").casefold().split("/")
+    # Evaluate each quality tier separately so an early fuzzy ancestor cannot
+    # hide a later exact component. Keep only one score per ending component.
+    for kind in range(4):
+        previous: list[int | None] = [None] * len(components)
+        for word_index, word in enumerate(words):
+            current: list[int | None] = [None] * len(components)
+            best: int | None = 0 if word_index == 0 else None
+            for index, component in enumerate(components):
+                if word_index and index and previous[index - 1] is not None:
+                    candidate = previous[index - 1]
+                    if candidate is not None:
+                        best = candidate if best is None else max(best, candidate)
+                score = _score(word, component)
+                if best is not None and score is not None and score[0] <= kind:
+                    current[index] = best + score[1]
+            previous = current
+        endings = [
+            points - 4 * (len(components) - index - 1)
+            for index, points in enumerate(previous)
+            if points is not None
+        ]
+        if endings:
+            return kind, max(endings)
+    return None

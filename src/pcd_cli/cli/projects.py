@@ -90,11 +90,12 @@ class ProjectListTable:
 
 
 @click.command(hidden=True)
-@click.argument("query")
+@click.argument("words", nargs=-1, required=True)
+@click.option("--resume", is_flag=True, help="Open the last visited subdirectory of the project.")
 @click.pass_obj
-def project(catalog: ProjectCatalog, query: str) -> None:
+def project(catalog: ProjectCatalog, words: tuple[str, ...], resume: bool) -> None:
     """Resolve a project name routed by the root command."""
-    navigate_to_project(catalog, query)
+    navigate_to_project(catalog, " ".join(words), resume=resume)
 
 
 @click.command()

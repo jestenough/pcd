@@ -19,7 +19,7 @@ from pcd_cli.cache import (
     _read_json,
     ProjectCache,
 )
-from pcd_cli.filesystem import _sync_directory, atomic_write, file_lock
+from pcd_cli.filesystem import _sync_directory, atomic_write, database_uri, file_lock
 from pcd_cli.lookup import (
     lookup_snapshot,
     LookupEntry,
@@ -189,7 +189,7 @@ class SQLiteProjectStore:
 
         # mode=ro must never create a missing cache, its directory or a journal.
         self.path.stat()
-        with closing(sqlite3.connect(_database_uri(self.path) + "?mode=ro", uri=True)) as conn:
+        with closing(sqlite3.connect(database_uri(self.path) + "?mode=ro", uri=True)) as conn:
             conn.execute("PRAGMA query_only = ON")
             conn.execute("PRAGMA trusted_schema = OFF")
             conn.execute("BEGIN")
@@ -487,22 +487,10 @@ class SQLiteProjectStore:
                 marker.write("1\n")
 
 
-def _database_uri(path: Path) -> str:
-    from urllib.parse import quote_from_bytes
-
-    absolute = path.resolve()
-    # Leave Windows UNC and device paths to pathlib. For local files, as_uri()
-    # imports urllib.request on newer Python versions just to encode the path.
-    if absolute.drive.startswith("\\\\"):
-        return absolute.as_uri()
-    prefix = "file:///" if absolute.drive else "file://"
-    return prefix + quote_from_bytes(os.fsencode(absolute.as_posix()), safe="/:")
-
-
 def _connect_writable(path: Path) -> Connection:
     import sqlite3
 
-    return sqlite3.connect(_database_uri(path) + "?mode=rw", uri=True)
+    return sqlite3.connect(database_uri(path) + "?mode=rw", uri=True)
 
 
 def _corrupt(exc: Exception) -> bool:

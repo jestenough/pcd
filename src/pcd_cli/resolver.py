@@ -37,6 +37,10 @@ class ProjectResolver:
             return snapshot_usage
 
         result = self.store.lookup(request, history)
+        if result is None and (
+            request.directories is not None or request.directory_entries is not None
+        ):
+            result = lookup_snapshot(MemorySnapshot(()), request, history)
         if result is not None and (result.total or not refresh_on_miss):
             return result
         if not refresh_on_miss:

@@ -83,6 +83,16 @@ can also inspect discoveries still present in the old cache.
 Search and selection
 --------------------
 
+Use several words to match path components in order. For example,
+``pcd acme api`` can distinguish ``~/clients/acme/api`` from another checkout
+named ``api``. A unique exact project name still takes precedence. With shell
+directory tracking enabled, ordinary directories you visit also become
+destinations. See the `shell setup guide <shells.rst>`_ for the opt-in hooks.
+
+``pcd PROJECT --resume`` opens the most recently visited subdirectory recorded
+under the project. If that directory disappeared, pcd explains the fallback
+and opens the project root. Use ``pcd PROJECT`` to open the root directly.
+
 Search is case-insensitive: exact names take priority, then prefix, substring,
 and fuzzy matches. ``--project`` performs exact-name lookup only.
 
