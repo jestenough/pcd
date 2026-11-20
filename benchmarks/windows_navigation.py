@@ -229,7 +229,7 @@ def main() -> None:
         result = ProjectCatalog.create().resolve(args.lookup_worker)
         print(json.dumps({"total": result.total, "window": len(result.matches)}))
         return
-    if sys.platform != "win32":
+    if platform.system() != "Windows":
         parser.error("This benchmark requires real Windows shells and launchers")
     if args.size < 100 or args.repeats < 1 or args.search_repeats < 1:
         parser.error("--size must be >= 100; repetition counts must be positive")
