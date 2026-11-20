@@ -34,6 +34,35 @@ def test_reads_editor_setting(projects: ProjectCatalog) -> None:
     assert projects.config.load().editor == "nvim --clean"
 
 
+def test_visit_checks_only_excluded_paths(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    calls = []
+    excluded = tmp_path / "private"
+    config = projects.config
+    config.path.parent.mkdir(parents=True)
+    config.path.write_text(
+        f"roots = [{json.dumps(str(tmp_path))}]\n"
+        f"excluded_projects = [{json.dumps(str(excluded))}]\n"
+        f"[[projects]]\nname='manual'\npath={json.dumps(str(tmp_path / 'manual'))}\n",
+        encoding="utf-8",
+    )
+
+    def resolve(path: Path) -> Path:
+        calls.append(path)
+        return canonical_path(path)
+
+    monkeypatch.setattr("pcd_cli.config.canonical_path", resolve)
+    assert config.visit_exclusions() == {excluded.resolve()}
+    assert calls == [excluded]
+
+    config.path.write_text("excluded_projects = [42]\n", encoding="utf-8")
+    with pytest.raises(InvalidConfigError):
+        config.visit_exclusions()
+
+
 def test_effective_config_includes_editor(projects: ProjectCatalog) -> None:
     projects.config.path.parent.mkdir(parents=True)
     projects.config.path.write_text('editor = "nvim --clean"\n', encoding="utf-8")

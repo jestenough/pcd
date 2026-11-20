@@ -41,17 +41,25 @@ class Config:
     cache_path: Path | None = None
 
     def load(self) -> ProjectSettings:
+        return _decode_settings(self._values())
+
+    def visit_exclusions(self) -> frozenset[Path]:
+        """Read the recording policy without resolving unrelated projects or roots."""
+        config = self._values()
+        _validate_keys(config, ROOT_KEYS, "config")
+        return _excluded_paths(config)
+
+    def _values(self) -> Mapping[str, object]:
         import tomllib
 
         text = self._read_text()
         if text is None:
-            return _decode_settings({})
+            return {}
         try:
-            value = tomllib.loads(text)
+            return tomllib.loads(text)
         except tomllib.TOMLDecodeError:
             # Keep compatibility with documents accepted by the editing parser.
-            return _decode_settings(_parse_document(text, self.path).unwrap())
-        return _decode_settings(value)
+            return _parse_document(text, self.path).unwrap()
 
     def effective_toml(self) -> str:
         import tomlkit
@@ -260,6 +268,16 @@ def _default_document() -> TOMLDocument:
     return document
 
 
+def _excluded_paths(config: Mapping[str, object]) -> frozenset[Path]:
+    items = _array(config.get("excluded_projects", []), "excluded_projects")
+    paths = frozenset(
+        canonical_path(_absolute_path(item, "excluded project path")) for item in items
+    )
+    if len(paths) != len(items):
+        raise InvalidConfigError("Config contains duplicate excluded projects")
+    return paths
+
+
 def _decode_settings(value: object) -> ProjectSettings:
     config = _table(value, "Config root must be a table")
     _validate_keys(config, ROOT_KEYS, "config")
@@ -269,13 +287,8 @@ def _decode_settings(value: object) -> ProjectSettings:
     manual_projects = tuple(
         _decode_manual_project(item) for item in _array(config.get("projects", []), "projects")
     )
-    excluded_paths = tuple(
-        canonical_path(_absolute_path(item, "excluded project path"))
-        for item in _array(config.get("excluded_projects", []), "excluded_projects")
-    )
-    if len(set(excluded_paths)) != len(excluded_paths):
-        raise InvalidConfigError("Config contains duplicate excluded projects")
-    if set(excluded_paths) & {project.path for project in manual_projects}:
+    excluded_paths = _excluded_paths(config)
+    if excluded_paths & {project.path for project in manual_projects}:
         raise InvalidConfigError("Manual projects cannot also be excluded projects")
     scan = _table(config.get("scan", {}), "scan must be a table")
     _validate_keys(scan, SCAN_KEYS, "scan")
@@ -303,7 +316,7 @@ def _decode_settings(value: object) -> ProjectSettings:
         follow_symlinks=follow_symlinks,
         excluded_names=excluded_names,
         editor=editor,
-        excluded_projects=frozenset(excluded_paths),
+        excluded_projects=excluded_paths,
     )
 
 

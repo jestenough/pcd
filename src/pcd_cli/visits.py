@@ -47,7 +47,7 @@ def record_current_directory(*, project_only: bool) -> None:
     try:
         path = Path.cwd().resolve()
         paths = ApplicationPaths.resolve()
-        if not is_excluded(path, Config(paths.config).load().excluded_projects):
+        if not is_excluded(path, Config(paths.config).visit_exclusions()):
             DirectoryVisits(paths.history).record(path, project_only=project_only)
     except OSError as exc:
         print(f"Warning: could not write usage history: {terminal_text(str(exc))}", file=sys.stderr)
