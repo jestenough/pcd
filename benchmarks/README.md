@@ -185,3 +185,16 @@ separate run for cProfile self/cumulative time and call counts.
 Profiler overhead affects wall time, so use the unprofiled runs for comparison.
 Do not run timed measurements alongside tests or other benchmarks. Filesystem
 caches are warm and antivirus state is uncontrolled.
+
+## End-to-end shell jumps
+
+With the installed `pcd` and `zoxide` executables on PATH, run
+`python benchmarks/shell_jumps.py --output shell-jumps.json`. The manual
+Shell jump comparison workflow uses zoxide 0.9.8, Bash on Linux and macOS,
+and PowerShell 7 on Windows.
+
+The driver seeds two real destinations in isolated stores and times verified
+exact-name jumps in one persistent shell. Timing includes the local pipe round
+trip and ends when the shell reports its working directory. Each tool makes
+six warm-up jumps and 42 measured jumps. Tool order alternates. Shell startup,
+prompt rendering, and interactive prompt hooks are outside the measured interval.
