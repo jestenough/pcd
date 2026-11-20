@@ -80,7 +80,7 @@ def prepare(size: int, history_size: int) -> None:
     )
     elapsed = time.perf_counter() - start
     catalog.history.path.parent.mkdir(parents=True, exist_ok=True)
-    catalog.history.path.write_text(
+    catalog.history.path.with_name("history.json").write_text(
         json.dumps(
             {
                 str(root / f"project-{i:06d}"): {"used_at": i + 1, "count": 1}
@@ -89,6 +89,7 @@ def prepare(size: int, history_size: int) -> None:
         ),
         encoding="utf-8",
     )
+    catalog.history.load()
     print(
         json.dumps(
             {
@@ -120,7 +121,8 @@ def prepare_tree(size: int, shape: str) -> None:
     target = Path.cwd() / "add-target"
     target.mkdir()
     catalog.history.path.parent.mkdir(parents=True, exist_ok=True)
-    catalog.history.path.write_text("{}", encoding="utf-8")
+    catalog.history.path.with_name("history.json").write_text("{}", encoding="utf-8")
+    catalog.history.load()
     print(
         json.dumps(
             {

@@ -85,8 +85,10 @@ def operations(home: Path, size: int, root_count: int) -> dict[str, Callable[[],
         }
     config = Config(home / "config.toml")
     config.path.write_text(json_config(root), encoding="utf-8")
-    history = UsageHistory(home / "history.json")
-    history.path.write_text(
+    history = UsageHistory(
+        home / "directories.sqlite3" if find_spec("pcd_cli.visits") else home / "history.json"
+    )
+    (home / "history.json").write_text(
         json.dumps(
             {
                 str(item.path): {"used_at": index, "count": 1}
@@ -95,6 +97,7 @@ def operations(home: Path, size: int, root_count: int) -> dict[str, Callable[[],
         ),
         encoding="utf-8",
     )
+    history.load()
     # Scanning gets real filesystem fixtures; the larger search set stays synthetic.
     for project in data[:250]:
         (project.path / ".git").mkdir(parents=True)

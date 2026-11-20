@@ -5,8 +5,9 @@ Scope and rollout
 -----------------
 
 Replace the disposable project cache independently of aliases. ``config.toml``
-remains authoritative for roots and manual registrations; history keeps its
-existing format. No configuration or history migration is necessary.
+remains authoritative for roots and manual registrations. Persistent navigation
+history is migrated independently of the cache (see `storage and upgrades
+<configuration.rst#storage-and-upgrades>`_).
 
 The development build uses SQLite through Python's standard-library
 ``sqlite3`` module. Both SQLite and a custom indexed file accelerated exact
@@ -54,15 +55,79 @@ from current configuration. The prototype file is no longer read.
 Returning to the published v0.2.8 tag uses its separate JSONL file. Run ``pcd refresh`` after a
 downgrade to update that cache from current configuration. Do not run alternating
 versions expecting their disposable caches to stay synchronized. Registered
-roots, manual projects and usage history remain available to both versions.
+roots and manual projects remain available to both versions. After downgrade,
+the released version reads its old JSON history. Visits recorded in the newer
+SQLite database are available again when you return to the development build.
 
 Lookup and picker contract
 --------------------------
 
 The resolver makes one storage-independent lookup call per attempt and owns
-refresh/retry behavior. Unique exact hits avoid loading history. Exact duplicates
-remain separate choices; text scores and history tie-breakers remain unchanged.
+refresh/retry behavior. A unique exact project name resolves through the index.
+A fuzzy query also considers learned directories. The first result window reads
+project usage history for ranking only when at least two entries match. Exact
+duplicates remain separate choices in the picker.
+The directory-history database indexes the casefolded basename of each
+learned path. For an imported directory name, pcd retrieves exact candidates
+through this index and checks for weaker matches so they remain selectable.
+For a fuzzy query, SQLite filters names that can contain the query characters
+in sequence. For several words, it applies that filter to the normalized path.
+The existing scorer still decides which candidates match and in what order.
+Broad queries can require checking many directories for existence.
 An empty picker query resolves the full catalog by recency.
+
+Windows search after importing 100,000 directories
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The table compares the previous linear learned-directory lookup with the
+indexed version, using equivalent fixtures of 100,000 existing directories
+on local disk. Each value is the median of nine runs after two warm-ups.
+Exact, fuzzy and multiword queries include starting and exiting pcd.exe.
+The broad query resolves the initial window without rendering the picker.
+
+==============================  ===========  ==========
+Search                          Before (ms)  After (ms)
+==============================  ===========  ==========
+Exact imported name                5,119.3       331.7
+Selective fuzzy                    4,495.4       324.9
+Two path components                8,635.5       786.5
+Broad, 99,997 matches             10,005.4     5,390.1
+==============================  ===========  ==========
+
+For each selective query, SQLite returned one candidate to Python. For the
+broad query it returned 99,997 candidates, which still require existence
+checks and ranking to produce the total and the first 100 results.
+See the `Windows benchmark instructions <../benchmarks/README.md#windows-navigation-after-a-large-import>`_.
+
+The subsequent broad-query optimization streams learned rows in path order
+and carries each row's visit data and text score into ranking. When a batch
+contains many siblings, a bounded directory listing can verify them together.
+Sparse candidates, unavailable listings and ambiguous path spellings use
+individual filesystem checks. Each page recomputes the live total.
+
+On a new Windows fixture of 100,000 existing directories, the same broad query
+returned 99,997 matches. Across nine fresh Python processes per version after
+two warm-ups, the first 100 results took 8.34 s before and 2.09 s after this
+change (p90: 10.82 s and 2.43 s). Both versions queried the same paths and
+scores. A separate comparison verified the ordered first and second pages,
+return to the first page, counts and rank cursors. Timings exclude rendering.
+
+The current implementation groups consecutive candidates by parent before
+batching them. A group of 1,000 siblings can now be checked with one directory
+listing. Ranking consumes SQLite rows directly and constructs project objects
+for the selected window. The catalog and history also share the local SQLite
+URI encoder, avoiding the network-library import on ordinary Windows paths.
+
+In a repeat comparison on one Windows fixture, the previous implementation
+took 2,625 ms and the current one took 838 ms (medians of nine fresh processes
+after two warm-ups). The slowest current run took 874 ms. Resolution inside
+the process took 2,123 ms and 528 ms respectively. A secondary five-run check
+with two manual registrations in the configuration took 949 ms median and
+976 ms maximum. The query still returned 99,997 matches; page paths, offsets
+and rank cursors agreed with the previous implementation.
+
+Picker windows
+~~~~~~~~~~~~~~
 
 Ranked lookup returns at most 100 projects, a total count and rank cursors. Cursor-based
 next/previous windows keep memory bounded independently of how far the user

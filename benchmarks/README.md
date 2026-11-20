@@ -61,7 +61,9 @@ Exact misses are repeated against the same root snapshot, not just an empty cach
 History I/O uses the real history implementation in a fresh process (not a CLI
 subcommand); the Bash wrapper uses a shim to run the selected revision through
 the same worker. Filesystem setup and snapshot restoration are not timed.
-Exact/selective navigation writes history normally. The broad fuzzy case loads
+Direct exact and selective lookups time destination resolution. In the working
+version, the shell records a visit after changing directory, so only a wrapper
+measurement includes that step. The broad fuzzy case loads
 the real picker and computes its initial result, but replaces the interactive
 terminal loop with cancellation so it cannot wait for a human. It does not
 measure terminal rendering or typing latency. Completion invokes Click's protocol,
@@ -139,3 +141,47 @@ parent-directory synchronization, retaining the best of three batches for each.
 It prints the two timings and their difference. File-content fsync remains enabled
 in both cases. On Windows the directory-sync step is a no-op, so the difference
 is measurement noise rather than a directory-sync durability cost.
+
+## Windows navigation after a large import
+
+Run the following from the checkout in PowerShell. Preparation creates 100,000
+real directories under a temporary fixture root. The second command imports
+synthetic visit scores through the installed zoxide executable, checks each
+destination, and times searches and alternating directory changes in PowerShell.
+
+```powershell
+poetry run python benchmarks/windows_navigation.py --prepare
+poetry run python benchmarks/windows_navigation.py --zoxide (Get-Command zoxide.exe).Source
+```
+
+The JSON report in `benchmarks/baselines/windows-navigation.json` includes
+individual samples, medians, p90 and source hashes. Process startup is included
+in CLI searches. Shell startup is excluded from the directory-change timings.
+To measure searches alone, add `--search-only` to the second command. This
+writes `benchmarks/baselines/windows-search.json`. Use `--output` to retain
+separate reports for the two versions being compared.
+
+For profiling broad imported-directory results without downloading zoxide again,
+`windows_broad_window.py` seeds the same 100,000 existing-directory fixture with
+the synthetic import scores directly. Point `--source` at a directory containing
+the `pcd_cli` package and keep before/after source snapshots, the Python runtime,
+dependencies, and fixture on the same local filesystem:
+
+```powershell
+poetry run python benchmarks/windows_broad_window.py --source src --root "$env:TEMP/pcd-broad-fixture" --prepare
+poetry run python benchmarks/windows_broad_window.py --source src --root "$env:TEMP/pcd-broad-fixture" --repeats 9 --output benchmarks/baselines/broad.json
+poetry run python benchmarks/windows_broad_window.py --source src --root "$env:TEMP/pcd-broad-fixture" --validate --output benchmarks/baselines/broad-windows.json
+```
+
+Run both snapshots against the unchanged fixture. The repeated measurement starts
+a fresh Python process for every first-100 query, includes imports and exit, and
+reports two warmups, individual samples, median and nearest-rank p90. It does not
+time zoxide import, a `pcd.exe` launcher, or picker rendering. `--validate` records
+the complete ordered first, next and previous windows and their totals/offsets;
+compare those artifacts across snapshots, not just their result counts. Add
+`--reference <before-windows.json>` to the candidate validation run to assert
+equality of every ordered path, rank, total and offset. Add `--profile` in a
+separate run for cProfile self/cumulative time and call counts.
+Profiler overhead affects wall time, so use the unprofiled runs for comparison.
+Do not run timed measurements alongside tests or other benchmarks. Filesystem
+caches are warm and antivirus state is uncontrolled.
