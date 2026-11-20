@@ -170,6 +170,67 @@ equivalent results before timing. The CLI harness exercises the command,
 including imports, history I/O and shell completion. Review the Linux, macOS
 and Windows reports before release.
 
+Cross-platform CLI and storage comparison
+-----------------------------------------
+
+The `release comparison <https://github.com/jestenough/pcd/actions/runs/44695085828>`_
+ran v0.2.8 and master at ``9a1679c`` on each runner with Python 3.14.
+The CLI timings below are medians of seven fresh processes, on warm fixtures
+without prior visits. Values are baseline / candidate. Broad search measures
+the initial selection on registered projects, excluding interactive rendering.
+
+.. csv-table::
+   :header: "Operation (ms)", "Linux", "macOS", "Windows"
+
+   "Startup (--help), 1k projects", 122 / 105, 94 / 82, 168 / 141
+   "Exact last name, 1k projects", 131 / 124, 93 / 93, 184 / 164
+   "Exact last name, 100k projects", 448 / 126, 342 / 119, 619 / 161
+   "Broad search, 100k projects", 2252 / 1079, 2097 / 1180, 2604 / 1398
+   "Completion returning all 100k names", 4419 / 4939, 3701 / 4037, 4854 / 5360
+   "Refresh of 2k repositories in one root", 346 / 349, 237 / 238, 633 / 687
+
+At 100k projects, peak RSS for the broad CLI search fell from 208 to 43 MiB
+on Linux, 254 to 48 MiB on macOS and 265 to 45 MiB on Windows. Returning all
+completion entries took 9–12% longer. The SQLite completion path reads and
+decodes project payloads before rendering names and display paths. Profile
+that path before choosing an optimization. Windows refresh took 8.6% longer
+on the wide fixture. With 2,048 visits, full history reads also took longer
+on all three runners (Linux 102 / 115 ms, macOS 83 / 108 ms, Windows 137 / 153 ms).
+
+The separate storage fixture measured 100k discovered projects. Values are
+legacy JSONL / SQLite. Path lengths differ across runners; compare formats
+within a column.
+
+.. csv-table::
+   :header: "Storage operation", "Linux", "macOS", "Windows"
+
+   "Build (ms)", 2551 / 1114, 1543 / 805, 3204 / 1636
+   "Disk footprint (MiB)", 24.2 / 39.6, 41.0 / 67.7, 39.5 / 66.4
+   "Exact lookup (ms)", 482 / 104, 323 / 81, 689 / 136
+   "Broad fuzzy lookup (ms)", 2571 / 411, 1534 / 271, 2982 / 470
+
+Cross-platform shell latency
+----------------------------
+
+The `shell jump comparison <https://github.com/jestenough/pcd/actions/runs/44696943676>`_
+at ``979c282`` used two registered directories and the default shell integrations.
+Each median includes 42 verified exact-name jumps in a persistent shell after
+six warm-up jumps per tool. The timer includes the local pipe round trip and
+stops when the shell reports its destination. Shell startup and prompt hooks
+are outside the measured interval.
+
+================  ============  =================  ==========
+Runner / shell    PCD (ms)      zoxide 0.9.8 (ms)  Time ratio
+================  ============  =================  ==========
+Linux / Bash      168.79        1.95               86.5x
+macOS / Bash      381.91        13.87              27.5x
+Windows / pwsh    376.17        28.15              13.4x
+================  ============  =================  ==========
+
+The default PCD wrapper invokes the CLI to resolve the destination, then
+invokes it again to record the successful directory change. Profile both
+invocations separately before attributing the timing gap to storage.
+
 Local validation of the SQLite implementation
 ---------------------------------------------
 
@@ -182,7 +243,7 @@ import, rollback after process termination, read-only completion during
 recovery and stale writes passed on both systems. All six performance limit
 checks passed on each platform. At 100k projects, SQLite fuzzy lookup retained
 at most 100 results, with a traced peak of 115 KiB on Windows and 125 KiB
-on Linux in the in-process test. macOS validation is pending.
+on Linux in the in-process test. The later master test matrix passed on macOS.
 
 Storage measurements
 --------------------
@@ -270,7 +331,8 @@ restored the same initial history before timing, and checked the destination
 path and shell protocol exit code 10. Times include imports, lookup, recording
 usage and process exit. Linux ran in a local container. The measurements
 compare release v0.2.8, pre-fix SQLite tree ``be77c6b1``, and the updated
-source with SHA-256 prefix ``5a5bd395ae62``. macOS remains unmeasured.
+source with SHA-256 prefix ``5a5bd395ae62``. This historical three-way run
+covered Windows and Linux.
 
 To repeat the comparison against a single baseline with the repository harness::
 

@@ -53,14 +53,23 @@ DIRECTORY SELECTION
     history intact. Record a visit only after a successful directory change.
 
 
-OUTSTANDING PLATFORM CHECKS
----------------------------
+PLATFORM CHECKS AND RELEASE FOLLOW-UP
+-------------------------------------
 
-    Run the test suite and storage and CLI comparisons on macOS. Compare startup,
-    exact navigation, refresh, disk usage and memory with the Linux and Windows results.
-    Run the Windows symlink tests on a runner that permits symlink creation.
-    Compare end-to-end jump latency with zoxide on all three platforms.
-    See docs/storage-030.rst for the measurements and acceptance criteria.
+    The master test matrix passed on Linux, macOS and Windows at 9a1679c.
+    Each Windows job (Python 3.12, 3.13 and 3.14) passed 639 tests, with no
+    symlink tests among the 22 skips. The macOS job passed with system Bash.
+    https://github.com/jestenough/pcd/actions/runs/44694333970
+
+    CLI comparisons against v0.2.8, JSONL/SQLite storage comparisons and
+    end-to-end shell jumps against zoxide 0.9.8 are complete on all three
+    platforms. See docs/storage-030.rst for timings, disk use and memory.
+
+    Before release, investigate full completion at 100k names (9–12% slower),
+    wide refresh on Windows (8.6% slower), and the cost of full history reads.
+    Profile exact shell jumps with two registered projects, including both
+    resolution and post-change recording. PCD took 13–86 times as long as
+    zoxide on this workload. Keep the package at 0.2.8 pending release review.
 
 
 DEFERRED IDEAS (UNSCHEDULED)
