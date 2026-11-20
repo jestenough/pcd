@@ -206,3 +206,17 @@ and 21 measured calls. These timings exclude shell dispatch and directory change
 The same run times an empty Python process and a fresh process importing
 the full PCD CLI with the benchmark interpreter. Both include process startup
 and exit. Install PCD in that interpreter's environment when comparing them.
+
+For small catalogs and concurrent shells, use the same installed PCD launcher
+and Python interpreter with two source trees:
+
+```text
+python benchmarks/small_shell_jumps.py --baseline-source ../baseline/src --output benchmarks/baselines/small-jumps.json
+```
+
+This alternates the baseline and working tree on isolated catalogs of 1 and 25
+manually registered projects. Each shell returns to its starting directory and
+runs a real jump. Two concurrent shells share one history database per version.
+The driver verifies destinations and total visits, then reports the median and
+nearest-rank 95th percentile in milliseconds. By default it measures 21 single
+jumps and 42 concurrent jumps per version and size after three warm-up rounds.

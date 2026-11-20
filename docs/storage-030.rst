@@ -325,6 +325,41 @@ Resolve partial name, 25 projects            309 ms    310 ms
 The full jump includes changing directory and recording the visit.
 The resolution measurements end when the command returns the destination.
 
+Manual projects and concurrent terminals
+---------------------------------------
+
+A separate Windows PowerShell 7 comparison used the working tree with the
+exact-name shortcut as its baseline, then applied the configuration, history
+and recovery fixes. Both versions used the same Python 3.15 interpreter.
+The 1- and 25-project fixtures registered each project in TOML. Two terminals
+shared a history database per version. Every destination and final visit count
+was verified. Values below show the elapsed time per jump in milliseconds.
+
+.. csv-table::
+   :header: "Projects", "Terminals", "Median before", "Median after", "p95 before", "p95 after"
+
+   1, 1, 454.4, 438.9, 583.7, 626.3
+   1, 2, 505.2, 514.0, 674.5, 645.8
+   25, 1, 441.1, 442.0, 593.7, 512.9
+   25, 2, 510.2, 481.2, 730.5, 579.0
+
+Each row alternated versions over 21 measured rounds after three warmups.
+Two terminals produced 42 samples per version. With 25 manual projects the
+recorder now resolves zero registered project paths to read an empty exclusion
+list, down from 25. Single-terminal median latency at that size was within
+1 ms of baseline. The largest improvement was in the two-terminal p95.
+The single-project, single-terminal p95 increased in this run. Reproduce
+with ``benchmarks/small_shell_jumps.py`` as described in the benchmark guide.
+
+Releasing history reads in batches trades some throughput for shorter writer
+waits. In a separate local probe of 100,000 history rows, consuming broad-query
+metadata took 173.5 ms versus 134.8 ms before, excluding filesystem checks.
+With a candidate iterator paused after its first row, a second connection
+previously timed out after 5.4 seconds and lost the visit. On the updated
+code all 24 test writes committed while the iterator remained paused. After
+three warmups the median write took 5.22 ms and p95 was 10.13 ms. This probe
+measures the history writer in-process, excluding shell and Python startup.
+
 Local validation of the SQLite implementation
 ---------------------------------------------
 
