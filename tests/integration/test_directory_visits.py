@@ -23,11 +23,15 @@ if TYPE_CHECKING:
     from pcd_cli.catalog import ProjectCatalog
 
 
-def test_visit_entrypoint_records_once_without_importing_click(
+def test_visit_entrypoint_records_once_without_loading_unrelated_modules(
     projects: ProjectCatalog, tmp_path: Path
 ) -> None:
     script = (
-        "import sys; from pcd_cli.entrypoint import main; main(); assert 'click' not in sys.modules"
+        "import sys; initial = set(sys.modules); from pcd_cli.entrypoint import main; main(); "
+        "extra = (set(sys.modules) - initial) & {'click', 'pcd_cli.locking', 'pcd_cli.environment'}; "
+        "assert not extra, extra; "
+        # platformdirs itself imports tempfile on Unix to find the runtime directory.
+        "assert 'tempfile' not in vars(sys.modules['pcd_cli.filesystem'])"
     )
     for args in (["_visit", "--project-only"], ["_visit"]):
         result = subprocess.run(
@@ -40,6 +44,24 @@ def test_visit_entrypoint_records_once_without_importing_click(
         assert result.returncode == 0, result.stderr
         assert not result.stdout and not result.stderr
     assert projects.history.load()[tmp_path.resolve()].count == 2
+
+
+def test_project_limit_preserves_learned_entries_and_breaks_ties_by_count_and_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = DirectoryVisits(tmp_path / "history.sqlite3")
+    monkeypatch.setattr("pcd_cli.visits.time.time", lambda: 1.0)
+    tracked, imported = tmp_path / "tracked", tmp_path / "imported"
+    store.record(tracked)
+    store.merge({imported: 8.0})
+    a, b, c = (tmp_path / name for name in ("a", "b", "c"))
+    for path in (a, a, b, c):
+        store.record(path, project_only=True, limit=2)
+
+    assert set(store.usage()) == {tracked, imported, a, c}
+    store.record(a, project_only=True, limit=0)
+    assert set(store.usage()) == {tracked, imported}
+    assert store.entries()[imported].preference == 8.0
 
 
 def test_project_only_visit_works_without_opening_catalog(

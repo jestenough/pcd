@@ -238,9 +238,9 @@ class DirectoryVisits:
             )
             if project_only:
                 db.execute(
-                    """DELETE FROM visits WHERE learned=0 AND identity NOT IN (
-                    SELECT identity FROM visits WHERE learned=0
-                    ORDER BY used DESC,count DESC,path DESC LIMIT ?)""",
+                    """DELETE FROM visits WHERE rowid IN (
+                    SELECT rowid FROM visits WHERE learned=0
+                    ORDER BY used DESC,count DESC,path DESC LIMIT -1 OFFSET ?)""",
                     (max(0, limit),),
                 )
             db.execute("UPDATE history_metadata SET value=value+1 WHERE key='revision'")

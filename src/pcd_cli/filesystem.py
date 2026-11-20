@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,10 +9,10 @@ from typing import Self, TextIO, TYPE_CHECKING
 from platformdirs import PlatformDirs
 
 from pcd_cli.display import terminal_text
-from pcd_cli.locking import file_lock as file_lock
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from contextlib import AbstractContextManager
 
 APP_NAME = "pcd-cli"
 CONFIG_FILENAME = "config.toml"
@@ -54,6 +53,13 @@ def canonical_path(path: Path) -> Path:
     return path.expanduser().resolve(strict=False)
 
 
+def file_lock(path: Path) -> AbstractContextManager[None]:
+    # SQLite visit transactions do not use the config/cache file-lock backend.
+    from pcd_cli.locking import file_lock as lock
+
+    return lock(path)
+
+
 def format_path(path: Path, *, home: Path | None = None) -> str:
     if home is None:
         home = Path.home()
@@ -67,6 +73,8 @@ def format_path(path: Path, *, home: Path | None = None) -> str:
 @contextmanager
 def atomic_write(path: Path) -> Generator[TextIO]:
     """Write through a temporary file so readers never observe partial data."""
+    import tempfile
+
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary_path = Path(temporary_name)

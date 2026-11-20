@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import time
 import zlib
 from contextlib import closing, contextmanager, ExitStack, nullcontext
@@ -519,6 +518,7 @@ class SQLiteProjectStore:
 
     def _replace(self, projects: Iterable[Project], generation: int) -> None:
         import sqlite3
+        import tempfile
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary_name = tempfile.mkstemp(
