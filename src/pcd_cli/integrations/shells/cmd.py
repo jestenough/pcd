@@ -33,6 +33,9 @@ class CmdDriver(ShellDriver):
         if not defined _PCD_EXECUTABLE set "_PCD_EXECUTABLE=pcd.exe"
 
         if defined _PCD_COMPLETE goto pcd_direct
+        if "%~1"=="_shell-setup" goto pcd_setup
+        set "pcd_previous=%CD%"
+        if "%~1"=="_shell-cd" goto pcd_ordinary_cd
 
         set "{SHELL_MODE_ENV}=1"
         set "pcd_output=%TEMP%\\pcd-%RANDOM%-%RANDOM%.tmp"
@@ -47,11 +50,44 @@ class CmdDriver(ShellDriver):
         set "pcd_destination="
         set /p "pcd_destination=" < "%pcd_output%"
         del /q "%pcd_output%"
-        rem Preserve literal carets and exclamation marks after restoring the caller's mode.
+        rem Change directory while delayed expansion is disabled, preserving ! and ^.
+        cd /d "%pcd_destination%"
+        :pcd_after_cd
+        set "pcd_code=%ERRORLEVEL%"
+        if not "%pcd_code%"=="0" goto pcd_cd_done
+        if "%pcd_previous%"=="%CD%" goto pcd_cd_done
+        set "pcd_destination=%CD%"
+        if "%PCD_TRACK_CD%"=="1" (call "%_PCD_EXECUTABLE%" _visit > nul) else (call "%_PCD_EXECUTABLE%" _visit --project-only > nul)
+        rem Return the destination without changing the caller's delayed expansion mode.
         if defined pcd_delayed_expansion set "pcd_destination=%pcd_destination:^=^^%"
         if defined pcd_delayed_expansion set "pcd_destination=%pcd_destination:!=^!%"
         endlocal & endlocal & cd /d "%pcd_destination%"
         exit /b %ERRORLEVEL%
+
+        :pcd_cd_done
+        endlocal & endlocal & exit /b %pcd_code%
+
+        :pcd_ordinary_cd
+        rem Dispatch the private marker as a label so native cd receives the full tail.
+        call :%*
+        goto pcd_after_cd
+
+        :_shell-cd
+        cd %*
+        exit /b %ERRORLEVEL%
+
+        :pcd_setup
+        if "%PCD_TRACK_CD%"=="1" call :pcd_bind_cd
+        endlocal & endlocal & exit /b 0
+
+        :pcd_bind_cd
+        set "pcd_collision="
+        for /f "delims==" %%M in ('doskey /macros') do if /i "%%M"=="cd" set "pcd_collision=1"
+        for /f "delims==" %%M in ('doskey /macros') do if /i "%%M"=="chdir" set "pcd_collision=1"
+        if defined pcd_collision (echo pcd: cd/chdir macro exists; bindings left unchanged. >&2 & exit /b 0)
+        doskey cd="%~f0" _shell-cd $*
+        doskey chdir="%~f0" _shell-cd $*
+        exit /b 0
 
         :pcd_direct
         call "%_PCD_EXECUTABLE%" %*

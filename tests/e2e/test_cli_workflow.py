@@ -310,3 +310,62 @@ def test_shell_wrapper_discovers_exact_miss_and_preserves_cwd_on_failure(
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == ["hit=0", str(repo), "miss=3", str(repo)]
     assert "Project not found: missing" in result.stderr
+
+
+def test_learn_jump_and_resume_in_new_bash_session(tmp_path: Path) -> None:
+    environment = _environment(tmp_path)
+    root = tmp_path / "projects"
+    repo = root / "acme" / "api"
+    subdir = repo / "service" / "tests"
+    ordinary = tmp_path / "customer files"
+    (repo / ".git").mkdir(parents=True)
+    subdir.mkdir(parents=True)
+    ordinary.mkdir()
+    environment.update(REPO=str(repo), WORK=str(subdir), OTHER=str(ordinary))
+    subprocess.run([_pcd_executable(), "init"], cwd=root, env=environment, check=True)
+    init = 'eval "$(command pcd shell init bash --track-cd)"'
+    scripts = [
+        'pcd acme api; test "$PWD" = "$REPO"; cd "$WORK"; cd "$OTHER"; test "$PWD" = "$OTHER"',
+        'pcd refresh; pcd refresh; pcd api; test "$PWD" = "$REPO"; '
+        'pcd "customer files"; test "$PWD" = "$OTHER"; '
+        'pcd api --resume; test "$PWD" = "$WORK"',
+    ]
+    for script in scripts:
+        result = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-ec", init + "\n" + script],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+
+
+def test_seven_project_jumps_then_five_tracked_visits(tmp_path: Path) -> None:
+    from pcd_cli.visits import DirectoryVisits
+
+    env = _environment(tmp_path)
+    target = tmp_path / "checkout"
+    target.mkdir()
+    env.update(TARGET=str(target), START=str(tmp_path), PCD_TRACK_CD="0")
+    subprocess.run([_pcd_executable(), "add", str(target)], env=env, check=True)
+    store = DirectoryVisits(Path(env["XDG_STATE_HOME"]) / "pcd-cli" / "directories.sqlite3")
+
+    for options, jump, count, expected in [
+        ("", "pcd checkout", 7, 7),
+        ("--track-cd", 'cd "$TARGET"', 5, 12),
+    ]:
+        script = (
+            f'eval "$(command pcd shell init bash {options})"\n'
+            f"for ((i=0; i<{count}; i++)); do {jump}; "
+            'test "$PWD" = "$TARGET"; cd "$START"; done'
+        )
+        subprocess.run(
+            ["bash", "--noprofile", "--norc", "-ec", script],
+            cwd=tmp_path,
+            env=env,
+            check=True,
+            timeout=60,
+        )
+        assert store.usage()[target].count == expected

@@ -12,6 +12,7 @@ from pcd_cli.integrations.shells.common import (
     SHELL_MODE_ENV,
     SHELL_WRAPPER_ENV,
 )
+from pcd_cli.integrations.shells.features import recorder
 
 
 class PowerShellDriver(StartupDriver):
@@ -94,7 +95,7 @@ class PowerShellDriver(StartupDriver):
         return installation_issue(self.shell)
 
     def render(self) -> str:
-        return dedent(
+        return recorder(self.shell) + dedent(
             f"""\
         function pcd {{
             [CmdletBinding()]
@@ -131,7 +132,19 @@ class PowerShellDriver(StartupDriver):
                 }}
 
                 if ($code -eq {SHELL_CD_EXIT_CODE}) {{
-                    Set-Location -LiteralPath ([string] $output)
+                    $beforeChange = $PWD.Path
+                    $global:__pcdLastDirectory = $beforeChange
+                    try {{
+                        Set-Location -LiteralPath ([string] $output) -ErrorAction Stop
+                    }} catch {{
+                        Write-Error -ErrorRecord $_ -ErrorAction Continue
+                        $global:LASTEXITCODE = 1
+                        return
+                    }}
+                    if (-not $global:__pcdTrackCd) {{
+                        $global:__pcdLastDirectory = $beforeChange
+                    }}
+                    __pcdRecordVisit
                     $global:LASTEXITCODE = 0
                     return
                 }}

@@ -13,6 +13,7 @@ from pcd_cli.integrations.shells.common import (
     SHELL_MODE_ENV,
     SHELL_WRAPPER_ENV,
 )
+from pcd_cli.integrations.shells.features import recorder
 
 
 class UnixDriver(StartupDriver):
@@ -47,13 +48,13 @@ class UnixDriver(StartupDriver):
 
     def render(self) -> str:
         if self.shell is Shell.FISH:
-            return _fish()
+            return recorder(self.shell) + _fish()
 
         if self.shell is Shell.BASH:
-            return _posix("bash_source")
+            return recorder(self.shell) + _posix("bash_source")
 
         if self.shell is Shell.ZSH:
-            return _posix("zsh_source")
+            return recorder(self.shell) + _posix("zsh_source")
 
         raise ValueError(f"Unsupported Unix shell: {self.shell}")
 
@@ -76,8 +77,10 @@ def _posix(completion: Literal["bash_source", "zsh_source"]) -> str:
             fi
 
             if [ "$code" -eq {SHELL_CD_EXIT_CODE} ]; then
-                builtin cd -- "$output"
-                return $?
+                _pcd_last_directory=$PWD
+                builtin cd -- "$output" || return $?
+                _pcd_record_visit
+                return 0
             fi
             if [ -n "$output" ]; then
                 printf '%s\\n' "$output"
@@ -102,8 +105,13 @@ def _fish() -> str:
             set -l output (command env {SHELL_WRAPPER_ENV}=fish {SHELL_MODE_ENV}=1 pcd $argv)
             set -l code $status
             if test $code -eq {SHELL_CD_EXIT_CODE}
+                set -g _pcd_last_directory "$PWD"
                 cd -- "$output"
-                return $status
+                set -l cd_code $status
+                if test $cd_code -eq 0
+                    _pcd_record_visit
+                end
+                return $cd_code
             end
             if test -n "$output"
                 printf '%s\\n' $output

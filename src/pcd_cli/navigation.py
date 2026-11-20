@@ -72,21 +72,17 @@ def project_completions(value: str) -> list[CompletionItem]:
 
 
 def _open_project(catalog: ProjectCatalog, project: Project) -> None:
-    if project.path.is_dir():
-        try:
-            catalog.record_usage(project)
-        except OSError as exc:
-            click.echo(f"Warning: could not write usage history: {exc}", err=True)
-    elif project.source is ProjectSource.MANUAL:
-        click.echo(
-            f"Project path no longer exists: {format_path(project.display_path)}",
-            err=True,
-        )
-        raise click.exceptions.Exit(ExitCode.ERROR)
-    else:
-        catalog.refresh()
-        click.echo("Selected project no longer exists.", err=True)
-        raise click.exceptions.Exit(ExitCode.ERROR)
+    if not project.path.is_dir():
+        if project.source is ProjectSource.MANUAL:
+            click.echo(
+                f"Project path no longer exists: {format_path(project.display_path)}",
+                err=True,
+            )
+            raise click.exceptions.Exit(ExitCode.ERROR)
+        else:
+            catalog.refresh()
+            click.echo("Selected project no longer exists.", err=True)
+            raise click.exceptions.Exit(ExitCode.ERROR)
 
     if shell_integration_active():
         click.echo(project.path)

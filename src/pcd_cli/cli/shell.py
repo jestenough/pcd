@@ -9,6 +9,7 @@ from pcd_cli.integrations.shell import (
     ShellChange,
     ShellIntegrationError,
 )
+from pcd_cli.integrations.shells.features import optional_features
 from pcd_cli.integrations.shells.registry import driver_for
 
 
@@ -100,11 +101,19 @@ def uninstall_shell(shell: str | None) -> None:
     required=False,
     type=click.Choice([item.value for item in Shell], case_sensitive=False),
 )
-def init_shell(shell: str | None) -> None:
+@click.option(
+    "--track-cd", is_flag=True, envvar="PCD_TRACK_CD", help="Remember ordinary cd visits."
+)
+def init_shell(shell: str | None, track_cd: bool) -> None:
     """Print shell integration for manual dotfile management."""
     platform = current_platform()
     selected = _select_shell(shell, platform)
+    if selected is Shell.CMD and track_cd:
+        raise click.UsageError(
+            "For CMD, set PCD_TRACK_CD=1 and run pcd _shell-setup. See docs/shells.rst."
+        )
     click.echo(driver_for(selected, platform).render(), nl=False)
+    click.echo(optional_features(selected, track_cd=track_cd), nl=False)
 
 
 def _select_shell(shell: str | None, platform: Platform, *, prompt: bool = False) -> Shell:

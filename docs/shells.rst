@@ -113,6 +113,66 @@ Use ``pcd shell install cmd`` and its printed DOSKEY reload command, or open a
 new Command Prompt. CMD uses a wrapper plus a DOSKEY command in the current user's
 AutoRun value, without changing PATH.
 
+Everyday navigation (opt-in)
+----------------------------
+
+Ordinary directory changes are remembered only when tracking is enabled.
+For manual initialization, add ``--track-cd``::
+
+    eval "$(command pcd shell init bash --track-cd)"
+    command pcd shell init fish --track-cd | source
+
+Use the corresponding shell name in the existing initialization block. For
+managed installations, set ``PCD_TRACK_CD=1`` in the startup file **before**
+the managed block. In Bash/Zsh use ``export``; in Fish
+use ``set -gx``; in PowerShell use ``$env:PCD_TRACK_CD = '1'``. Remove that
+setting and start a new shell to disable tracking.
+
+Tracking remembers successful changes, including non-Git directories, and
+honors configured path exclusions. Failed changes, canceled pickers, and
+unchanged directories do not add visits. Each observed change is recorded
+once; wrapper jumps and tracking hooks share a directory guard. An unchanged
+prompt starts no additional process. History failures do not prevent a
+successful directory change. Default ``pcd`` integration still records project
+usage after a successful jump without learning arbitrary directories.
+
+Bash wraps the builtin ``cd`` when no existing ``cd`` function or alias is
+present; it preserves a custom implementation and observes its final directory
+at the next prompt. The prompt hook also catches changes through other commands.
+An existing custom ``cd`` that changes directories several times before a
+prompt records only its final location. Bash preserves scalar or array
+``PROMPT_COMMAND``. Zsh uses ``chpwd_functions`` and Fish watches ``PWD``.
+PowerShell 7 uses the location-change event and preserves an existing handler.
+Windows PowerShell 5.1 uses a generated proxy for the native ``Set-Location``
+command, retaining its parameters and provider behavior; a pre-existing
+``Set-Location`` function is preserved. PowerShell also retains the original
+prompt and checks for changes there, covering other commands and custom
+functions. Changes only observed at a prompt record the final location.
+Only filesystem locations are learned.
+
+CMD options and limitations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Install the normal CMD wrapper first. Enable optional DOSKEY macros explicitly
+in each interactive Command Prompt (or in your own startup script)::
+
+    set PCD_TRACK_CD=1
+    pcd _shell-setup
+
+The setup command checks for existing ``cd``/``chdir`` macros before adding
+bindings. Existing bindings are preserved.
+``cd`` and ``chdir`` macros forward successful directory changes through the
+wrapper and share its post-change tracking.
+
+CMD has no supported prompt callback. DOSKEY macros apply to commands entered
+interactively, and do not expand inside batch scripts, ``cmd /c`` or compound
+commands after a separator. Directory changes that bypass these macros are not
+learned. Paths containing spaces work with or without quotes, for example
+``cd Program Files`` and ``cd /d "Program Files"``. The
+wrapper preserves literal exclamation marks and carets in paths returned by
+navigation. Remove macros with ``doskey cd=`` and ``doskey chdir=`` or open a new
+shell without the setup command to disable them.
+
 Migration from older versions
 -----------------------------
 
