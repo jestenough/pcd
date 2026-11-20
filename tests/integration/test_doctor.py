@@ -449,9 +449,7 @@ def test_doctor_retains_legacy_only_history(runner: CliRunner, tmp_path: Path) -
     assert not paths.history.exists()
 
 
-def test_doctor_rejects_history_wal_without_sidecar_writes(
-    runner: CliRunner, tmp_path: Path
-) -> None:
+def test_doctor_reads_history_wal_without_sidecar_writes(runner: CliRunner, tmp_path: Path) -> None:
     paths = healthy_files()
     DirectoryVisits(paths.history).record(tmp_path)
     with closing(sqlite3.connect(paths.history)) as db:
@@ -460,7 +458,39 @@ def test_doctor_rejects_history_wal_without_sidecar_writes(
 
     result = runner.invoke(cli, ["doctor"])
 
-    assert result.exit_code == 1, result.output
-    assert "ISSUE: History:" in result.output
-    assert "unsupported WAL" in result.output
+    assert result.exit_code == 0, result.output
+    assert "OK: History:" in result.output
     assert snapshot(tmp_path) == before
+
+
+def test_history_inspection_includes_uncheckpointed_visits(tmp_path: Path) -> None:
+    path = tmp_path / "directories.sqlite3"
+    store = DirectoryVisits(path)
+    store.record(tmp_path)
+    with closing(sqlite3.connect(path)) as keeper:
+        assert keeper.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        keeper.execute("BEGIN")
+        assert keeper.execute("SELECT count(*) FROM visits").fetchone() == (1,)
+        store.record(tmp_path / "second")
+        before = snapshot(tmp_path)
+        assert path.with_name(path.name + "-wal") in before
+        assert store.inspect() == (3, 2)
+        assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("failure", [PermissionError, FileNotFoundError])
+def test_history_inspection_reports_unavailable_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: type[OSError]
+) -> None:
+    import shutil
+
+    store = DirectoryVisits(tmp_path / "history.sqlite3")
+    store.record(tmp_path)
+
+    def unavailable(source: Path, destination: Path) -> None:
+        raise failure("unavailable")
+
+    monkeypatch.setattr(shutil, "copyfile", unavailable)
+    with pytest.raises(OSError, match=r"Cannot inspect|changed during inspection"):
+        store.inspect()
+    assert store.usage()[tmp_path].count == 1

@@ -160,22 +160,46 @@ class DirectoryVisits:
 
     def inspect(self) -> tuple[int, int]:
         """Check existing history without migrating it or creating SQLite sidecars."""
-        # Match the cache's inspection policy. Connecting to a WAL database can
-        # create -shm even with mode=ro, and immutable=1 would ignore live WAL.
+        # Journal mode can change while doctor runs. Open only a private copy,
+        # so even a concurrent switch to WAL cannot create original sidecars.
+        import shutil
+        import tempfile
+
+        sources = [self.path, *(Path(f"{self.path}{suffix}") for suffix in ("-wal", "-journal"))]
+
+        def stamp(path: Path) -> tuple[int, int, int, int] | None:
+            try:
+                info = path.stat()
+            except FileNotFoundError:
+                return None
+            return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
+
         try:
-            with self.path.open("rb") as stream:
-                header = stream.read(20)
-        except FileNotFoundError:
+            with tempfile.TemporaryDirectory() as folder:
+                for attempt in range(3):
+                    before = [stamp(path) for path in sources]
+                    if before[0] is None:
+                        raise FileNotFoundError(self.path)
+                    copy = Path(folder) / f"snapshot-{attempt}.db"
+                    try:
+                        for source, state in zip(sources, before, strict=True):
+                            if state is not None:
+                                suffix = source.name[len(self.path.name) :]
+                                shutil.copyfile(source, Path(f"{copy}{suffix}"))
+                    except FileNotFoundError:
+                        continue
+                    if before == [stamp(path) for path in sources]:
+                        return self._inspect_file(copy)
+        except (FileNotFoundError, DirectoryHistoryError):
             raise
         except OSError as exc:
             raise DirectoryHistoryError(f"Cannot inspect directory history: {exc}") from exc
-        if len(header) == 20 and (header[18] == 2 or header[19] == 2):
-            raise DirectoryHistoryError(
-                "Directory history uses unsupported WAL journaling; inspection could create "
-                "sidecars. Restore DELETE journal mode with SQLite while pcd is idle"
-            )
+        raise DirectoryHistoryError("History changed during inspection; retry doctor")
+
+    @staticmethod
+    def _inspect_file(path: Path) -> tuple[int, int]:
         try:
-            with closing(sqlite3.connect(database_uri(self.path) + "?mode=ro", uri=True)) as db:
+            with closing(sqlite3.connect(database_uri(path) + "?mode=ro", uri=True)) as db:
                 db.execute("PRAGMA query_only = ON")
                 db.execute("PRAGMA trusted_schema = OFF")
                 db.execute("BEGIN")
