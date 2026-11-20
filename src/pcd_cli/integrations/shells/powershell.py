@@ -95,6 +95,9 @@ class PowerShellDriver(StartupDriver):
         return installation_issue(self.shell)
 
     def render(self) -> str:
+        from pcd_cli.entrypoint import _COMMANDS
+
+        commands = ", ".join(f"'{name}'" for name in sorted(_COMMANDS))
         return recorder(self.shell) + dedent(
             f"""\
         function pcd {{
@@ -104,47 +107,51 @@ class PowerShellDriver(StartupDriver):
                 [string[]] $PcdArguments
             )
 
-            $hadPreviousWrapper = Test-Path Env:{SHELL_WRAPPER_ENV}
             $previousWrapper = $env:{SHELL_WRAPPER_ENV}
             $env:{SHELL_WRAPPER_ENV} = '{self.shell.value}'
             try {{
-                $pcdExecutable = (
-                    Get-Command pcd -CommandType Application -ErrorAction Stop |
-                    Select-Object -First 1
-                ).Source
+                $pcdExecutable = __pcdExecutablePath
                 if ($env:_PCD_COMPLETE) {{
                     & $pcdExecutable @PcdArguments
                     return
                 }}
 
-                $hadPreviousShellMode = Test-Path Env:{SHELL_MODE_ENV}
                 $previousShellMode = $env:{SHELL_MODE_ENV}
                 $env:{SHELL_MODE_ENV} = '1'
                 try {{
-                    $output = & $pcdExecutable @PcdArguments
-                    $code = $LASTEXITCODE
-                }} finally {{
-                    if ($hadPreviousShellMode) {{
-                        $env:{SHELL_MODE_ENV} = $previousShellMode
-                    }} else {{
-                        Remove-Item Env:{SHELL_MODE_ENV} -ErrorAction SilentlyContinue
+                    $output = $null
+                    if ($null -ne $PcdArguments -and $PcdArguments.Count -eq 1 -and $PcdArguments[0] -notlike '-*' -and
+                        $PcdArguments[0] -cnotin @({commands})) {{
+                        $output = __pcdWorkerRequest $pcdExecutable 'lookup' $PcdArguments[0]
                     }}
+                    if ($output) {{
+                        $code = {SHELL_CD_EXIT_CODE}
+                    }} else {{
+                        $output = & $pcdExecutable @PcdArguments
+                        $code = $LASTEXITCODE
+                    }}
+                }} finally {{
+                    $env:{SHELL_MODE_ENV} = $previousShellMode
                 }}
 
                 if ($code -eq {SHELL_CD_EXIT_CODE}) {{
                     $beforeChange = $PWD.Path
                     $global:__pcdLastDirectory = $beforeChange
+                    $previousExecutable = $global:__pcdVisitExecutable
+                    $global:__pcdVisitExecutable = $pcdExecutable
                     try {{
                         Set-Location -LiteralPath ([string] $output) -ErrorAction Stop
+                        if (-not $global:__pcdTrackCd) {{
+                            $global:__pcdLastDirectory = $beforeChange
+                        }}
+                        __pcdRecordVisit
                     }} catch {{
                         Write-Error -ErrorRecord $_ -ErrorAction Continue
                         $global:LASTEXITCODE = 1
                         return
+                    }} finally {{
+                        $global:__pcdVisitExecutable = $previousExecutable
                     }}
-                    if (-not $global:__pcdTrackCd) {{
-                        $global:__pcdLastDirectory = $beforeChange
-                    }}
-                    __pcdRecordVisit
                     $global:LASTEXITCODE = 0
                     return
                 }}
@@ -153,11 +160,7 @@ class PowerShellDriver(StartupDriver):
                 }}
                 $global:LASTEXITCODE = $code
             }} finally {{
-                if ($hadPreviousWrapper) {{
-                    $env:{SHELL_WRAPPER_ENV} = $previousWrapper
-                }} else {{
-                    Remove-Item Env:{SHELL_WRAPPER_ENV} -ErrorAction SilentlyContinue
-                }}
+                $env:{SHELL_WRAPPER_ENV} = $previousWrapper
             }}
         }}
 
@@ -165,9 +168,8 @@ class PowerShellDriver(StartupDriver):
         $previousCompletionMode = $env:_PCD_COMPLETE
         $env:_PCD_COMPLETE = 'powershell_source'
         try {{
-            $pcdExecutable = Get-Command pcd -CommandType Application -ErrorAction Stop |
-                Select-Object -First 1
-            $completion = & $pcdExecutable.Source
+            $pcdExecutable = __pcdExecutablePath
+            $completion = & $pcdExecutable
             if ($completion) {{
                 $completion | Out-String | Invoke-Expression
             }}

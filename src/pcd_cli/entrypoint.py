@@ -27,6 +27,12 @@ _COMMANDS = frozenset(
 
 def main() -> None:
     args = sys.argv[1:]
+    if args == ["--internal-shell-worker"] and not os.environ.get("_PCD_COMPLETE"):
+        from pcd_cli.shell_worker import serve
+
+        serve()
+        return
+
     if args in (["_visit"], ["_visit", "--project-only"]) and not os.environ.get("_PCD_COMPLETE"):
         from pcd_cli.config import InvalidConfigError
         from pcd_cli.visits import record_current_directory

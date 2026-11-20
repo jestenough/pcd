@@ -187,7 +187,10 @@ def test_posix_tracking_avoids_duplicate_visits(tmp_path: Path, shell: Shell) ->
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell behavior")
 @pytest.mark.parametrize("shell", [Shell.POWERSHELL, Shell.PWSH])
-def test_default_wrapper_records_return_after_untracked_cd(tmp_path: Path, shell: Shell) -> None:
+@pytest.mark.parametrize("track_cd", [False, True])
+def test_jump_records_with_the_resolving_executable(
+    tmp_path: Path, shell: Shell, track_cd: bool
+) -> None:
     exe = shutil.which(shell.value)
     if exe is None:
         pytest.skip(f"{shell.value} unavailable")
@@ -195,6 +198,11 @@ def test_default_wrapper_records_return_after_untracked_cd(tmp_path: Path, shell
     other = tmp_path / "other"
     target.mkdir()
     other.mkdir()
+    # A relative PATH entry changes meaning after cd. Use the same backend
+    # that resolved the project to record its successful jump.
+    (target / "pcd.cmd").write_text(
+        '@echo wrong recorder>>"%PCD_VISIT_LOG%"\n@exit /b 1\n', encoding="utf-8"
+    )
     log = tmp_path / "visits.txt"
     (tmp_path / "pcd.cmd").write_text(
         "@echo off\nif defined _PCD_COMPLETE exit /b 0\n"
@@ -206,17 +214,18 @@ def test_default_wrapper_records_return_after_untracked_cd(tmp_path: Path, shell
     script = tmp_path / "test.ps1"
     script.write_text(
         driver_for(shell).render()
-        + optional_features(shell, track_cd=False)
+        + optional_features(shell, track_cd=track_cd)
         + "\npcd jump\nSet-Location -LiteralPath $env:PCD_OTHER\npcd jump\n",
         encoding="utf-8",
     )
     environment = os.environ.copy()
-    environment["PATH"] = str(tmp_path) + os.pathsep + environment["PATH"]
+    environment["PATH"] = os.pathsep.join((".", str(tmp_path), environment["PATH"]))
     environment["PCD_TEST_TARGET"] = str(target)
     environment["PCD_OTHER"] = str(other)
     environment["PCD_VISIT_LOG"] = str(log)
     result = subprocess.run(
         [exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+        cwd=other,
         env=environment,
         capture_output=True,
         text=True,
@@ -224,4 +233,56 @@ def test_default_wrapper_records_return_after_untracked_cd(tmp_path: Path, shell
         timeout=15,
     )
     assert result.returncode == 0, result.stderr
-    assert log.read_text().splitlines() == ["--project-only:" + str(target)] * 2
+    expected = (
+        [f":{target}", f":{other}", f":{target}"] if track_cd else [f"--project-only:{target}"] * 2
+    )
+    assert log.read_text().splitlines() == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell 7 session worker")
+def test_powershell_restarts_exited_worker(runner: CliRunner, tmp_path: Path) -> None:
+    from pcd_cli.filesystem import ApplicationPaths
+    from pcd_cli.visits import DirectoryVisits
+
+    shell = shutil.which("pwsh")
+    if not shell or not shutil.which("pcd.exe"):
+        pytest.skip("requires installed pcd.exe and pwsh")
+    target = tmp_path / "session-target"
+    target.mkdir()
+    assert runner.invoke(cli, ["add", str(target)]).exit_code == 0
+    script = tmp_path / "restart.ps1"
+    script.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        + driver_for(Shell.PWSH).render()
+        + """
+$start = $PWD.Path
+try {
+    pcd session-target
+    if ($PWD.Path -ne $env:EXPECTED_TARGET) { throw 'first jump failed' }
+    $first = $global:__pcdWorker
+    $first.Kill($true)
+    $first.WaitForExit()
+    Set-Location -LiteralPath $start
+    pcd session-target
+    if ($PWD.Path -ne $env:EXPECTED_TARGET -or $global:__pcdWorker -eq $first) {
+        throw 'worker did not restart'
+    }
+} finally {
+    if ($global:__pcdWorker -and -not $global:__pcdWorker.HasExited) {
+        $global:__pcdWorker.StandardInput.Close()
+        $global:__pcdWorker.WaitForExit()
+    }
+}
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-File", str(script)],
+        cwd=tmp_path,
+        env=os.environ | {"EXPECTED_TARGET": str(target)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert DirectoryVisits(ApplicationPaths.resolve().history).usage()[target.resolve()].count == 2

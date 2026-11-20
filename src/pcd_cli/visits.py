@@ -6,7 +6,7 @@ import os
 import sqlite3
 import stat
 import time
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from itertools import islice
@@ -17,7 +17,7 @@ from pcd_cli.filesystem import database_uri
 from pcd_cli.models import ProjectUsage
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator, Mapping
+    from collections.abc import Callable, Generator, Iterator, Mapping
 
     from pcd_cli.lookup import DirectoryEntry
 
@@ -37,7 +37,12 @@ class Visit:
     preference: float
 
 
-def record_current_directory(*, project_only: bool) -> None:
+def record_current_directory(
+    *,
+    project_only: bool,
+    directory: Path | None = None,
+    open_history: Callable[[Path], DirectoryVisits] | None = None,
+) -> bool:
     import sys
 
     from pcd_cli.config import Config
@@ -45,12 +50,15 @@ def record_current_directory(*, project_only: bool) -> None:
     from pcd_cli.filesystem import ApplicationPaths
 
     try:
-        path = Path.cwd().resolve()
+        path = (directory if directory is not None else Path.cwd()).resolve()
         paths = ApplicationPaths.resolve()
         if not is_excluded(path, Config(paths.config).visit_exclusions()):
-            DirectoryVisits(paths.history).record(path, project_only=project_only)
+            history = (open_history or DirectoryVisits)(paths.history)
+            history.record(path, project_only=project_only)
+            return True
     except OSError as exc:
         print(f"Warning: could not write usage history: {terminal_text(str(exc))}", file=sys.stderr)
+    return False
 
 
 def is_excluded(path: Path, excluded_projects: frozenset[Path]) -> bool:
@@ -65,6 +73,7 @@ def is_excluded(path: Path, excluded_projects: frozenset[Path]) -> bool:
 @dataclass(frozen=True, slots=True)
 class DirectoryVisits:
     path: Path
+    writer: sqlite3.Connection | None = None
 
     @contextmanager
     def _connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
@@ -78,12 +87,14 @@ class DirectoryVisits:
                             yield db
                         return
                     raise _HistoryNotFoundError(self.path) from None
-            if write:
+            if write and self.writer is not None:
+                db = self.writer
+            elif write:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 db = sqlite3.connect(self.path)
             else:
                 db = sqlite3.connect(database_uri(self.path) + "?mode=ro", uri=True)
-            with closing(db), db:
+            with nullcontext(db) if db is self.writer else closing(db), db:
                 db.execute("PRAGMA trusted_schema = OFF")
                 db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]

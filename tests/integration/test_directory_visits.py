@@ -483,3 +483,94 @@ def test_invalid_history_revision_has_a_distinct_type(
         store.revision()
     with pytest.raises(DirectoryHistoryError, match="Invalid directory history revision"):
         store.inspect()
+
+
+def test_worker_reads_current_catalog_and_records_only_confirmed_visits(
+    projects: ProjectCatalog, runner: CliRunner, tmp_path: Path
+) -> None:
+    target = tmp_path / "résumé"
+    target.mkdir()
+    assert runner.invoke(cli, ["add", str(target)]).exit_code == 0
+    with subprocess.Popen(
+        [sys.executable, "-c", "from pcd_cli.shell_worker import serve; serve()"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as proc:
+        assert proc.stdin and proc.stdout
+
+        def request(operation: str, value: str, exclusions: str = "") -> str:
+            assert proc.stdin and proc.stdout
+            proc.stdin.write(json.dumps([operation, value, exclusions]) + "\n")
+            proc.stdin.flush()
+            return str(json.loads(proc.stdout.readline()))
+
+        try:
+            assert request("lookup", target.name) == str(target.resolve())
+            assert not projects.history.path.exists()
+            for _ in range(7):
+                assert request("project", str(target)) == "ok"
+            for _ in range(5):
+                assert request("track", str(target)) == "ok"
+            assert request("track", str(target), str(target)) == "ok"
+            assert projects.history.load()[target.resolve()].count == 12
+            assert runner.invoke(cli, ["remove", target.name]).exit_code == 0
+            assert request("lookup", target.name) == ""
+        finally:
+            proc.stdin.close()
+            proc.wait(timeout=10)
+
+
+def test_session_skips_reserved_names_and_keeps_serving_after_invalid_json(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from io import BytesIO, TextIOWrapper
+
+    from pcd_cli import entrypoint, shell_worker
+
+    projects.cache.save([])
+    lines = [
+        "invalid",
+        json.dumps(["lookup", "doctor", ""]),
+        json.dumps(["lookup", "missing", ""]),
+        json.dumps(["track", "relative", ""]),
+        json.dumps(["track", str(tmp_path), str(tmp_path)]),
+        json.dumps(["track", str(tmp_path), ""]),
+        json.dumps(["project", str(tmp_path), ""]),
+    ]
+    monkeypatch.setattr(shell_worker, "_local_volume", lambda path: True)
+    with TextIOWrapper(BytesIO("\n".join(lines).encode())) as stream:
+        monkeypatch.setattr(sys, "stdin", stream)
+        monkeypatch.setattr(sys, "argv", ["pcd", "--internal-shell-worker"])
+        entrypoint.main()
+    output = capsys.readouterr()
+    assert list(map(json.loads, output.out.splitlines())) == ["", "", "", "", "ok", "ok", "ok"]
+    assert output.err
+    assert projects.history.load()[tmp_path.resolve()].count == 2
+    with closing(sqlite3.connect(projects.history.path)) as db:
+        assert db.execute("PRAGMA journal_mode").fetchone() == ("wal",)
+
+
+def test_recorder_dispatch_reports_current_config_errors(
+    projects: ProjectCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from pcd_cli import entrypoint
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["pcd", "_visit", "--project-only"])
+    entrypoint.main()
+    assert projects.history.load()[tmp_path.resolve()].count == 1
+    projects.config.path.parent.mkdir(parents=True, exist_ok=True)
+    projects.config.path.write_text("excluded_projects = [", encoding="utf-8")
+    with pytest.raises(SystemExit) as error:
+        entrypoint.main()
+    assert error.value.code == 1
+    assert "Config error" in capsys.readouterr().err
+    assert projects.history.load()[tmp_path.resolve()].count == 1

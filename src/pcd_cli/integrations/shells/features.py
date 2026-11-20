@@ -45,14 +45,79 @@ def recorder(shell: Shell) -> str:
         return dedent("""\
             $global:__pcdLastDirectory = $PWD.Path
             $global:__pcdTrackCd = $false
+            $global:__pcdVisitExecutable = $null
+            function global:__pcdExecutablePath {
+                if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') {
+                    $app = $ExecutionContext.InvokeCommand.GetCommand('pcd', 'Application')
+                    if ($app) { return $app.Source }
+                }
+                (Get-Command pcd -CommandType Application -TotalCount 1 -ErrorAction Stop).Source
+            }
+            function global:__pcdWorkerRequest($exe, $op, $value) {
+                if ($PSVersionTable.PSVersion.Major -lt 7 -or -not $IsWindows -or
+                    $ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage' -or
+                    $exe -notlike '*.exe') { return }
+                $key = ConvertTo-Json -Compress -InputObject @(
+                    $exe, $env:USERPROFILE, $env:HOME, $env:LOCALAPPDATA, $env:APPDATA,
+                    $env:WIN_PD_OVERRIDE_LOCAL_APPDATA, $env:WIN_PD_OVERRIDE_APPDATA,
+                    $env:PYTHONPATH, $env:PYTHONHOME
+                )
+                $proc = $global:__pcdWorker
+                try {
+                    if ($proc -and ($proc.HasExited -or $global:__pcdWorkerKey -cne $key)) {
+                        if (-not $proc.HasExited) { $proc.StandardInput.Close() }
+                        $proc.Dispose()
+                        $global:__pcdWorker = $proc = $null
+                    }
+                    if (-not $proc) {
+                        if ($op -ne 'lookup') { return }
+                        $proc = [Diagnostics.Process]::new()
+                        $proc.StartInfo.FileName = $exe
+                        $proc.StartInfo.Arguments = '--internal-shell-worker'
+                        $proc.StartInfo.WorkingDirectory = $env:SystemRoot
+                        $proc.StartInfo.UseShellExecute = $false
+                        $proc.StartInfo.CreateNoWindow = $true
+                        $proc.StartInfo.RedirectStandardInput = $true
+                        $proc.StartInfo.RedirectStandardOutput = $true
+                        $proc.StartInfo.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+                        if (-not $proc.Start()) { return }
+                        $global:__pcdWorker = $proc
+                        $global:__pcdWorkerKey = $key
+                    }
+                    $request = ConvertTo-Json -Compress -InputObject @($op, $value, $env:PCD_EXCLUDE_DIRS)
+                    $proc.StandardInput.WriteLine($request)
+                    $proc.StandardInput.Flush()
+                    $reply = $proc.StandardOutput.ReadLineAsync()
+                    if (-not $reply.Wait(10000) -or $null -eq $reply.Result) { throw 'Worker unavailable' }
+                    return (ConvertFrom-Json -InputObject $reply.Result)
+                } catch {
+                    if ($proc) {
+                        try { if (-not $proc.HasExited) { $proc.Kill($true) } } catch {}
+                        $proc.Dispose()
+                    }
+                    $global:__pcdWorker = $null
+                    if ($op -ne 'lookup') {
+                        Write-Warning 'pcd: visit acknowledgement lost; check history'
+                        return 'uncertain'
+                    }
+                }
+            }
+            if (-not (Get-Variable __pcdWorker -Scope Global -ErrorAction SilentlyContinue)) {
+                $global:__pcdWorker = $null
+            }
             function global:__pcdRecordVisit {
                 $previousCode = $global:LASTEXITCODE
                 if ($PWD.Provider.Name -eq 'FileSystem' -and
                     $global:__pcdLastDirectory -cne $PWD.Path) {
                     $global:__pcdLastDirectory = $PWD.Path
                     try {
-                        $exe = (Get-Command pcd -CommandType Application -ErrorAction Stop |
-                            Select-Object -First 1).Source
+                        $exe = $global:__pcdVisitExecutable
+                        if (-not $exe) { $exe = __pcdExecutablePath }
+                        $op = if ($global:__pcdTrackCd) { 'track' } else { 'project' }
+                        if ($global:__pcdWorker -and (__pcdWorkerRequest $exe $op $PWD.ProviderPath)) {
+                            $global:LASTEXITCODE = $previousCode
+                            return
+                        }
                         if ($global:__pcdTrackCd) {
                             & $exe _visit | Out-Null
                         } else {

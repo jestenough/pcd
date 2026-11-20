@@ -42,7 +42,7 @@ Navigation history
 History is optional: a missing database is normal before the first recorded
 visit. Existing ``history.json`` and older SQLite schemas are reported without
 being migrated or changed. The check never refreshes the project catalog or
-creates history, a journal, or SQLite shared-memory files.
+creates history or SQLite sidecars alongside the original database.
 
 If history is unreadable or corrupt, doctor reports a History issue. Keep a
 backup before attempting recovery: unlike the project catalog, navigation
@@ -51,10 +51,13 @@ from a known good backup, or move it aside while pcd is idle to start fresh.
 Moving it aside loses recorded visits and imported preferences; a retained
 ``history.json`` will be imported again on the next ordinary history access.
 
-pcd uses rollback journals. Doctor refuses externally enabled WAL journaling
-before opening the database because even a read-only SQLite connection can
-create sidecars. Restore ``DELETE`` journal mode with SQLite while pcd is idle
-before inspecting it. Normal lookup releases history read transactions between
+The Windows PowerShell 7 worker keeps Python and its history writer open until
+the shell closes. It enables WAL with synchronous FULL for history on supported
+local fixed volumes with SQLite 3.51.3 or later. Close active terminals before
+moving the history database. Doctor checks a temporary copy of the database
+and its WAL, leaving the original sidecars untouched. The project catalog
+uses rollback journals and doctor rejects externally enabled WAL there.
+Normal lookup releases history read transactions between
 bounded batches, so slow filesystem checks do not hold up concurrent visit
 recording.
 

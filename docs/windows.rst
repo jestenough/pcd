@@ -115,3 +115,20 @@ run ``pcd shell install cmd`` to update an existing managed wrapper. Manual wrap
 must be updated from ``pcd shell init cmd``.
 
 See also: `other startup problems <troubleshooting.rst>`_ and the `README <../README.txt>`_.
+
+
+Exact jumps in PowerShell 7
+---------------------------
+
+Start a new PowerShell session after updating PCD to load the current wrapper.
+On Windows, a full-language PowerShell 7 session with the installed
+``pcd.exe`` starts a private Python process on demand for a single project
+name. A unique cached name returns its path. After
+``Set-Location`` succeeds, the wrapper sends the actual directory and waits
+for the history transaction. Changes to the catalog and exclusion settings
+are visible on subsequent jumps. Ambiguous queries use the regular CLI and
+picker. Windows PowerShell 5.1 uses the regular executable for each call.
+
+The worker exits when the shell closes its input pipe. If it exits between
+commands, the next lookup starts another worker. If contact is lost while
+recording a visit, PCD warns and leaves the directory change in place.
