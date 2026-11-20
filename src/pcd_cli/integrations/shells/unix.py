@@ -60,7 +60,7 @@ class UnixDriver(StartupDriver):
 
 
 def _posix(completion: Literal["bash_source", "zsh_source"]) -> str:
-    return dedent(
+    wrapper = dedent(
         f"""\
         pcd() {{
             local -x {SHELL_WRAPPER_ENV}={completion.removesuffix("_source")}
@@ -88,9 +88,16 @@ def _posix(completion: Literal["bash_source", "zsh_source"]) -> str:
             return "$code"
         }}
 
-        eval "$(_PCD_COMPLETE={completion} command pcd)"
         """
     )
+    setup = f'eval "$(_PCD_COMPLETE={completion} command pcd)"'
+    if completion == "bash_source":
+        return wrapper + (
+            "if (( BASH_VERSINFO[0] > 4 || "
+            "(BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then\n"
+            f"    {setup}\nfi\n"
+        )
+    return wrapper + setup + "\n"
 
 
 def _fish() -> str:

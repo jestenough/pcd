@@ -33,6 +33,9 @@ is left unchanged by the installer.
 Bash and Git Bash
 ~~~~~~~~~~~~~~~~~
 
+Tab completion requires Bash 4.4 or later. Navigation and optional directory
+tracking also work with the older Bash shipped by macOS.
+
 In ``~/.bashrc``::
 
     eval "$(command pcd shell init bash)"
