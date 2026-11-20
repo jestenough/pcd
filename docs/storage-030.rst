@@ -231,6 +231,38 @@ The default PCD wrapper invokes the CLI to resolve the destination, then
 invokes it again to record the successful directory change. Profile both
 invocations separately before attributing the timing gap to storage.
 
+Local Windows follow-up (Python 3.15.2, PowerShell 7)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Compared with ``0ac4142``, the candidate defers the TOML editing library until
+needed, records visits without opening the project catalog, and reuses common
+paths when decoding and formatting completion entries. A refresh reuses one
+JSON encoder when writing its SQLite payloads.
+
+.. csv-table::
+   :header: "Operation", "Before (ms)", "After (ms)"
+
+   "Real shell jump (42 samples)", 613.1, 555.0
+   "Resolver process (9 samples)", 272.7, 250.6
+   "Post-change recorder process (9 samples)", 384.3, 327.6
+   "Completion: 100k names, empty history", 2937.6, 2383.9
+   "History load: 2,048 visits", 212.7, 188.7
+   "Refresh: 2,000 repositories in one root", 897.3, 829.1
+
+The process timings are separate medians from alternating baseline and
+candidate runs. They are independent of the real shell-jump samples. The
+last three rows use three fresh processes per version after warm-up.
+A second candidate run with ``--phases`` measured 580.8 ms per shell jump,
+228.4 ms for resolution and 335.8 ms for recording (21 samples per phase).
+Compare within a row; the hosted runners above used different environments.
+
+In a separate run against the v0.2.8 tag on the same machine, full completion
+with empty history took 2,351 ms versus 2,652 ms in v0.2.8. Loading 2,048
+visits took 188 ms versus 193 ms, while reading empty history took 183 ms
+versus 177 ms. An 11-sample refresh comparison found a remaining regression
+against v0.2.8: 820 ms versus 779 ms for a wide root (+5.2%), and 882 ms
+versus 803 ms for repositories grouped under subdirectories (+9.8%).
+
 Local validation of the SQLite implementation
 ---------------------------------------------
 

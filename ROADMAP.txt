@@ -65,11 +65,13 @@ PLATFORM CHECKS AND RELEASE FOLLOW-UP
     end-to-end shell jumps against zoxide 0.9.8 are complete on all three
     platforms. See docs/storage-030.rst for timings, disk use and memory.
 
-    Before release, investigate full completion at 100k names (9–12% slower),
-    wide refresh on Windows (8.6% slower), and the cost of full history reads.
-    Profile exact shell jumps with two registered projects, including both
-    resolution and post-change recording. PCD took 13–86 times as long as
-    zoxide on this workload. Keep the package at 0.2.8 pending release review.
+    Repeat the local Windows improvements on the hosted runners. Compare full
+    completion at 100k names, refresh and history reads against v0.2.8.
+    Local Windows refresh of 2,000 repositories still takes 5.2% longer
+    in a wide root and 9.8% longer in a grouped tree (11-sample medians).
+    Report both phases of exact shell jumps and the end-to-end time. Recording
+    a successful visit still costs more than resolution in the local Windows
+    run. Keep the package at 0.2.8 pending release review.
 
 
 DEFERRED IDEAS (UNSCHEDULED)
