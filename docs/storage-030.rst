@@ -278,6 +278,25 @@ the median recorder call from 410 to 347 ms and the real PowerShell jump from
 770 to 733 ms. Separate runs of the end-to-end harness gave 774 and 769 ms;
 the smaller difference illustrates the sensitivity to run order and host load.
 
+PowerShell jumps on small catalogs
+----------------------------------
+
+Local Windows measurements compared commit ``d2787d3`` with the indexed
+shortcut for unique exact names. Each value is the median of 21 runs after
+three warmups, using the same Python interpreter and a populated SQLite cache.
+
+===========================================  ========  ========
+Operation                                    Baseline  Shortcut
+===========================================  ========  ========
+Full PowerShell jump, 1 project              688 ms    597 ms
+Full PowerShell jump, 25 projects            652 ms    568 ms
+Resolve exact name, 25 projects              309 ms    229 ms
+Resolve partial name, 25 projects            309 ms    310 ms
+===========================================  ========  ========
+
+The full jump includes changing directory and recording the visit.
+The resolution measurements end when the command returns the destination.
+
 Local validation of the SQLite implementation
 ---------------------------------------------
 

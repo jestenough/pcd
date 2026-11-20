@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 import pcd_cli.navigation as navigation_module
+from pcd_cli import entrypoint
 from pcd_cli.catalog import ProjectCatalog
 from pcd_cli.cli import cli
 from pcd_cli.filesystem import ApplicationPaths, canonical_path
@@ -20,6 +22,48 @@ if TYPE_CHECKING:
     from click.testing import CliRunner
 
     from pcd_cli.models import ProjectUsage
+
+
+def test_shell_fast_path_respects_command_names() -> None:
+    assert cli.commands.keys() == entrypoint._COMMANDS
+
+
+def test_cached_shell_jump_only_emits_path(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "my project"
+    target.mkdir()
+    assert runner.invoke(cli, ["add", str(target)]).exit_code == 0
+    monkeypatch.setenv("PCD_SHELL", "1")
+    monkeypatch.setattr(sys, "argv", ["pcd", target.name.upper()])
+    monkeypatch.setattr("pcd_cli.cli.main", lambda: pytest.fail("unnecessary CLI dispatch"))
+    with pytest.raises(SystemExit) as exc:
+        entrypoint.main()
+    assert exc.value.code == 10
+    assert capsys.readouterr().out == f"{target.resolve()}\n"
+    assert not ApplicationPaths.resolve().history.exists()
+
+
+@pytest.mark.parametrize("query", ["info", "shared", "sha", "gone"])
+def test_cached_shell_jump_defers_to_cli(
+    query: str, tmp_path: Path, projects: ProjectCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entries = []
+    for name, folder in (("info", "info"), ("shared", "one"), ("SHARED", "two"), ("gone", "gone")):
+        path = tmp_path / folder
+        if name != "gone":
+            path.mkdir()
+        entries.append(Project(name, path, path, ProjectSource.MANUAL))
+    projects.cache.save(entries)
+    dispatched: list[str] = []
+    monkeypatch.setattr("pcd_cli.cli.main", lambda: dispatched.append(query))
+    monkeypatch.setenv("PCD_SHELL", "1")
+    monkeypatch.setattr(sys, "argv", ["pcd", query])
+    entrypoint.main()
+    assert dispatched == [query]
 
 
 def test_project_argument_dispatch(runner: CliRunner, tmp_path: Path) -> None:

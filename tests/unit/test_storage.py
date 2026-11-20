@@ -36,6 +36,21 @@ def store(tmp_path: Path) -> SQLiteProjectStore:
     return SQLiteProjectStore(tmp_path / "projects.sqlite3")
 
 
+def test_cached_jump_requires_one_valid_exact_match(
+    store: SQLiteProjectStore, tmp_path: Path
+) -> None:
+    assert store.unique_cached_path("repo") is None
+    first, second = item(tmp_path / "one", "Repo"), item(tmp_path / "two", "repo")
+    assert store.save([first, second])
+    assert store.unique_cached_path("repo") is None
+    assert store.save([first])
+    assert store.unique_cached_path("rep") is None
+    assert store.unique_cached_path("REPO") == first.path
+    with closing(sqlite3.connect(store.path)) as db, db:
+        db.execute("UPDATE projects SET payload_crc=-1")
+    assert store.unique_cached_path("repo") is None
+
+
 def test_database_path_with_uri_special_characters(tmp_path: Path) -> None:
     name = "café # %2F" if sys.platform == "win32" else "café # %2F ?mode=ro"
     store = SQLiteProjectStore(tmp_path / name / "projects.sqlite3")

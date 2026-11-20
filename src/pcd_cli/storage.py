@@ -107,7 +107,7 @@ class SQLiteSnapshot:
 
     def _entries(
         self, clause: str = "", parameters: tuple[bytes, ...] = ()
-    ) -> Iterator[LookupEntry[int]]:
+    ) -> Generator[LookupEntry[int]]:
         previous: tuple[str, str] | None = None
         with closing(self.connection.execute(_METADATA + clause + _ORDER, parameters)) as cursor:
             for row in cursor:
@@ -121,7 +121,7 @@ class SQLiteSnapshot:
     def records(self) -> Iterator[LookupEntry[int]]:
         return self._entries()
 
-    def exact(self, key: str) -> Iterator[LookupEntry[int]]:
+    def exact(self, key: str) -> Generator[LookupEntry[int]]:
         return self._entries(" WHERE name_key = ?", (key.encode("utf-8"),))
 
     def prefix(self, key: str) -> Iterator[LookupEntry[int]]:
@@ -264,6 +264,19 @@ class SQLiteProjectStore:
                     _rollback_hot_journal(self.path)
                 snapshot = stack.enter_context(self._snapshot())
             yield snapshot
+
+    def unique_cached_path(self, name: str) -> Path | None:
+        """Probe an existing snapshot; normal CLI dispatch handles ambiguous or stale data."""
+        import sqlite3
+
+        try:
+            with self._snapshot() as snapshot, closing(snapshot.exact(name.casefold())) as entries:
+                first = next(entries, None)
+                if first is not None and next(entries, None) is None:
+                    return snapshot.read(first).path
+        except (_CacheReadError, OSError, UnicodeError, sqlite3.DatabaseError):
+            pass
+        return None
 
     def load(self) -> list[Project] | None:
         import sqlite3
