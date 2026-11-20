@@ -11,6 +11,11 @@ table header::
 
     editor = "nvim"
 
+On Windows, backslashes in the editor command are literal. Quote an executable
+path containing spaces and use a TOML literal string to preserve the path::
+
+    editor = '"C:\Program Files\My Editor\edit.exe" --wait'
+
 After changing roots, manual projects, or scan settings in the editor, run::
 
     pcd config validate

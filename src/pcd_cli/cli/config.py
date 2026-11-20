@@ -50,7 +50,13 @@ def edit_config(catalog: ProjectCatalog) -> None:
         )
 
     try:
-        command = shlex.split(editor)
+        parser = shlex.shlex(editor, posix=True)
+        parser.whitespace_split = True
+        parser.commenters = ""
+        if sys.platform == "win32":
+            # Keep drive paths and UNC prefixes literal, inside and outside quotes.
+            parser.escape = ""
+        command = list(parser)
     except ValueError as exc:
         raise click.UsageError(f"Invalid editor command: {exc}") from exc
     if not command:

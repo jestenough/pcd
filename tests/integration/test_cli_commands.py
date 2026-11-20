@@ -673,6 +673,31 @@ def test_config_edit_prefers_configured_editor(
     assert calls == [["nvim", "--clean", str(config.path)]]
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows editor path syntax")
+@pytest.mark.parametrize(
+    ("editor", "expected"),
+    [
+        (r"C:\Windows\notepad.exe", [r"C:\Windows\notepad.exe"]),
+        (
+            r'"C:\Program Files\Editor\edit.exe" --wait',
+            [r"C:\Program Files\Editor\edit.exe", "--wait"],
+        ),
+        (r'\\server\tools\edit.exe "a b"', [r"\\server\tools\edit.exe", "a b"]),
+    ],
+)
+def test_config_edit_preserves_windows_paths(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, editor: str, expected: list[str]
+) -> None:
+    def run_editor(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+        assert args == [*expected, str(ProjectCatalog.create().config.path)]
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setenv("VISUAL", editor)
+    monkeypatch.setattr("pcd_cli.cli.config.subprocess.run", run_editor)
+    result = runner.invoke(cli, ["config", "edit"])
+    assert result.exit_code == 0, result.exception
+
+
 def test_config_edit_requires_configured_editor(
     runner: CliRunner,
     monkeypatch: pytest.MonkeyPatch,
