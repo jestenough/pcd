@@ -51,7 +51,8 @@ def main() -> None:
         from pcd_cli.storage import SQLiteProjectStore
 
         try:
-            store = SQLiteProjectStore(ApplicationPaths.resolve().cache)
+            paths = ApplicationPaths.resolve()
+            store = SQLiteProjectStore(paths.cache, config_path=paths.config)
             destination = store.unique_cached_path(args[0])
             if destination is not None and destination.is_dir() and str(destination).isprintable():
                 print(destination)

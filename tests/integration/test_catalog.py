@@ -16,7 +16,8 @@ from pcd_cli.scanner import ProjectScanner, ScanError
 from pcd_cli.storage import SQLiteProjectStore, SQLiteSnapshot
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
+    from sqlite3 import Connection
 
     from pcd_cli.lookup import LookupEntry
     from pcd_cli.models import ProjectSettings
@@ -685,3 +686,261 @@ def test_resolver_refreshes_at_most_once_and_uses_one_lookup_per_attempt(
     monkeypatch.setattr(SQLiteProjectStore, "lookup", lookup)
     assert projects.resolve("missing").matches == []
     assert refreshes == 1 and lookups == 2
+
+
+@pytest.mark.parametrize("mutation", ["add-root", "remove-root", "remove-manual", "exclude"])
+def test_config_mutation_failed_scan_hides_stale_cache(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    root = tmp_path / "root"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    other = tmp_path / "other"
+    other.mkdir()
+    manual = Project("manual", other, other, ProjectSource.MANUAL)
+    projects.config.add_root(root)
+    projects.config.add_project(manual)
+    initial = projects.refresh()
+    previous = projects.cache.path.read_bytes()
+
+    def fail(_scanner: ProjectScanner) -> Iterator[Project]:
+        raise ScanError([(root, PermissionError("blocked"))])
+
+    monkeypatch.setattr(ProjectScanner, "scan", fail)
+    with pytest.raises(OSError, match=r"Configuration saved.*next ordinary lookup retries"):
+        if mutation == "add-root":
+            projects.add_scan_root(other)
+        elif mutation == "remove-root":
+            projects.remove_scan_root(root)
+        elif mutation == "remove-manual":
+            projects.remove_project(other)
+        else:
+            projects.remove_selected_project(next(item for item in initial if item.name == "repo"))
+    assert projects.cache.path.read_bytes() == previous
+    assert projects.cache.load() is None
+    assert list(projects.completion_candidates("")) == []
+    store = SQLiteProjectStore(projects.cache.path, config_path=projects.config.path)
+    assert store.unique_cached_path("repo") is None
+    assert store.unique_cached_path("manual") is None
+    with pytest.raises(ScanError):
+        projects.resolve("repo", exact_only=True)
+
+
+def test_config_initialization_invalidates_cache(projects: ProjectCatalog) -> None:
+    projects.cache.save(())
+    assert projects.cache.load() == []
+    projects.config.ensure_exists()
+    assert projects.cache.load() is None
+    assert projects.projects() == []
+    assert projects.cache.load() == []
+
+
+def test_manual_config_edit_invalidates_cache(projects: ProjectCatalog, tmp_path: Path) -> None:
+    path = tmp_path / "notes"
+    path.mkdir()
+    project = Project("notes", path, path, ProjectSource.MANUAL)
+    projects.config.add_project(project)
+    projects.refresh()
+    text = projects.config.path.read_text(encoding="utf-8")
+    projects.config.path.write_text(
+        text.replace('name = "notes"', 'name = "renamed"'), encoding="utf-8"
+    )
+    assert projects.cache.load() is None
+    assert projects.resolve("renamed").matches[0].name == "renamed"
+
+
+def test_refresh_retries_config_changed_during_scan(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    projects.config.add_root(root)
+    original_scan = ProjectScanner.scan
+    scans = 0
+
+    def scan(scanner: ProjectScanner) -> Iterator[Project]:
+        nonlocal scans
+        scans += 1
+        yield from original_scan(scanner)
+        if scans == 1:
+            assert projects.config.remove_root(root)
+            assert projects.refresh() == []
+
+    monkeypatch.setattr(ProjectScanner, "scan", scan)
+    assert projects.refresh() == []
+    assert scans == 3
+    assert projects.cache.load() == []
+
+
+@pytest.mark.parametrize("unavailable", ["missing", "corrupt", "changed-config"])
+def test_missing_catalog_refreshes_before_using_weaker_learned_match(
+    projects: ProjectCatalog, tmp_path: Path, unavailable: str
+) -> None:
+    from pcd_cli.visits import DirectoryVisits
+
+    root = tmp_path / "root"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    projects.config.add_root(root)
+    learned = tmp_path / "repo-backup"
+    learned.mkdir()
+    DirectoryVisits(projects.history.path).record(learned)
+    if unavailable == "corrupt":
+        projects.cache.path.parent.mkdir(parents=True)
+        projects.cache.path.write_bytes(b"broken")
+    elif unavailable == "changed-config":
+        projects.cache.save(())
+        projects.config.ensure_exists()
+        projects.config.path.write_text(
+            projects.config.path.read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8"
+        )
+    result = projects.resolve("repo")
+    assert [project.path for project in result.matches] == [repo]
+    assert projects.cache.load() is not None
+
+
+@pytest.mark.parametrize("mutation", ["add-root", "remove-root", "remove-manual", "exclude"])
+def test_failed_mutation_cannot_revive_legacy_cache(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    root = tmp_path / "root"
+    repo = root / "repo"
+    (repo / ".git").mkdir(parents=True)
+    projects.config.add_root(root)
+    manual = Project("manual", tmp_path / "manual", tmp_path / "manual", ProjectSource.MANUAL)
+    projects.config.add_project(manual)
+    legacy = ProjectCache(projects.cache.path.with_name("projects.jsonl"))
+    initial = [manual, Project("repo", repo, repo, ProjectSource.DISCOVERED)]
+    legacy.save(initial)
+
+    def fail(_scanner: ProjectScanner) -> Iterator[Project]:
+        raise ScanError([(root, PermissionError("blocked"))])
+
+    monkeypatch.setattr(ProjectScanner, "scan", fail)
+    with pytest.raises(OSError, match="Configuration saved"):
+        if mutation == "add-root":
+            projects.add_scan_root(tmp_path)
+        elif mutation == "remove-root":
+            projects.remove_scan_root(root)
+        elif mutation == "remove-manual":
+            projects.remove_project(manual.path)
+        else:
+            projects.remove_selected_project(initial[1])
+    assert legacy.load() == initial
+    assert list(projects.completion_candidates("")) == []
+    assert projects.cache.load() is None
+
+
+def test_config_write_failure_after_replace_reports_partial_change(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pcd_cli import filesystem
+
+    projects.refresh()
+
+    def fail(_path: Path) -> None:
+        raise OSError("directory sync failed")
+
+    monkeypatch.setattr(filesystem, "_sync_directory", fail)
+    with pytest.raises(OSError, match="Configuration may have been saved"):
+        projects.add_scan_root(tmp_path)
+    assert projects.config.load().roots == (tmp_path,)
+    assert projects.cache.load() is None
+
+
+def test_cache_write_failure_reports_committed_config(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projects.refresh()
+
+    def fail(_store: SQLiteProjectStore, *_args: object, **_kwargs: object) -> bool:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(SQLiteProjectStore, "save", fail)
+    with pytest.raises(OSError, match=r"Configuration saved.*next ordinary lookup retries"):
+        projects.add_scan_root(tmp_path)
+    assert projects.config.load().roots == (tmp_path,)
+    assert projects.cache.load() is None
+
+
+def test_unstamped_sqlite_is_rebuilt_before_navigation(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    import sqlite3
+
+    path = tmp_path / "notes"
+    path.mkdir()
+    project = Project("notes", path, path, ProjectSource.MANUAL)
+    projects.config.add_project(project)
+    projects.cache.save(())
+    with sqlite3.connect(projects.cache.path) as connection:
+        connection.execute("DROP TABLE configuration")
+    connection.close()
+    assert projects.cache.load() is None
+    store = SQLiteProjectStore(projects.cache.path, config_path=projects.config.path)
+    assert store.unique_cached_path("notes") is None
+    assert projects.resolve("notes").matches == [project]
+    assert store.unique_cached_path("notes") == path
+
+
+def test_rejected_publication_without_cache_keeps_completed_scan(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "notes"
+    path.mkdir()
+    project = Project("notes", path, path, ProjectSource.MANUAL)
+    projects.config.add_project(project)
+    monkeypatch.setattr(SQLiteProjectStore, "save", lambda *_args, **_kwargs: False)
+    assert projects.resolve("notes").matches == [project]
+
+
+def test_editor_change_during_cache_write_cannot_certify_old_scan(
+    projects: ProjectCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    (root / "repo" / ".git").mkdir(parents=True)
+    projects.config.add_root(root)
+    original_write = SQLiteProjectStore._write
+
+    writes = 0
+
+    def write(
+        store: SQLiteProjectStore, connection: Connection, items: Iterable[Project], generation: int
+    ) -> None:
+        nonlocal writes
+        writes += 1
+        if writes == 1:
+            # An external editor does not honor our configuration writer lock.
+            text = projects.config.path.read_text(encoding="utf-8")
+            lines = text.splitlines()
+            lines = ["roots = []" if line.startswith("roots =") else line for line in lines]
+            projects.config.path.write_text("\n".join(lines), encoding="utf-8")
+        original_write(store, connection, items, generation)
+
+    monkeypatch.setattr(SQLiteProjectStore, "_write", write)
+    assert projects.refresh() == []
+    assert writes == 2
+    assert projects.cache.load() == []
+    store = SQLiteProjectStore(projects.cache.path, config_path=projects.config.path)
+    assert store.unique_cached_path("repo") is None
+
+
+def test_manual_config_edit_before_legacy_import_skips_stale_snapshot(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    path = tmp_path / "notes"
+    path.mkdir()
+    project = Project("notes", path, path, ProjectSource.MANUAL)
+    projects.config.add_project(project)
+    legacy = ProjectCache(projects.cache.path.with_name("projects.jsonl"))
+    legacy.save([project])
+    text = projects.config.path.read_text(encoding="utf-8")
+    projects.config.path.write_text(
+        text.replace('name = "notes"', 'name = "renamed"'), encoding="utf-8"
+    )
+    # Give the editor write a distinct mtime even on coarse timestamp filesystems.
+    legacy_time = legacy.path.stat().st_mtime_ns
+    os.utime(projects.config.path, ns=(legacy_time + 1_000_000_000, legacy_time + 1_000_000_000))
+    assert list(projects.completion_candidates("")) == []
+    assert [item.name for item in projects.resolve("renamed").matches] == ["renamed"]
+    assert legacy.load() == [project]

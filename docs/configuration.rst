@@ -16,6 +16,11 @@ After changing roots, manual projects, or scan settings in the editor, run::
     pcd config validate
     pcd refresh
 
+Configuration edits invalidate the previous project snapshot automatically.
+The next ordinary lookup or listing rebuilds it. Running ``pcd refresh``
+explicitly verifies the scan immediately; completion and picker query edits
+remain cache-only and return no registered projects until that rebuild succeeds.
+
 Scan behavior
 -------------
 

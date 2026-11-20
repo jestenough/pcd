@@ -33,6 +33,31 @@ build a fresh database beside the target and publish it by atomic replacement.
 The refresh start time is checked under the cache writer lock so a late writer
 cannot overwrite a newer valid catalog.
 
+Snapshots also record the configuration file identity and timestamps. Every
+cache read, including the exact-name dispatch shortcut, rejects a snapshot
+whose configuration stamp changed. Configuration mutations remain committed if
+a later scan fails, but the old snapshot is then unavailable to navigation,
+listing, the picker and completion. Normal lookups with configured roots or
+manual projects rebuild it before considering a learned match. With no roots
+or registrations, a learned hit can be returned directly. Cache-only
+picker queries and completion never scan. Refresh checks the settings again
+under the configuration lock before publishing and retries if another config
+writer changed them during the scan. This prevents a concurrent old scan from
+making a removed registration or exclusion reappear. The previous SQLite file
+is retained until a complete replacement is ready. Mutation errors report that
+the configuration was saved and that the next ordinary lookup retries; run
+``pcd refresh`` once the underlying scan or I/O problem is resolved. An error
+after atomic TOML replacement also warns that the configuration may be saved.
+
+When a legacy JSONL snapshot exists, a configuration write persists the cache
+initialization barrier before replacing TOML. The source JSONL is preserved,
+but neither normal reads nor completion can reimport that pre-change snapshot
+after a failed refresh or a crash. Older SQLite snapshots without a configuration
+stamp are rebuilt once before normal use. Legacy imports also check that the
+TOML modification time is no newer than JSONL, so a manual edit skips an older
+legacy cache. Publication stores the verified pre-write configuration stamp
+and checks it afterwards, covering editors which do not acquire pcd's lock.
+
 Compatibility and recovery
 --------------------------
 
@@ -47,7 +72,8 @@ it can read the legacy cache.
 
 An absent, unsupported or corrupt cache is rebuilt through the resolver from
 configuration and a complete scan. Failed scans do not replace the previous
-cache. Invalid or unreadable configuration is reported rather than reset.
+cache. If configuration is unchanged it remains usable. Invalid or unreadable
+configuration is reported rather than reset.
 An existing SQLite database takes precedence over legacy data. If you tested
 the unreleased ``projects.idx`` prototype, run ``pcd refresh`` once to rebuild
 from current configuration. The prototype file is no longer read.
@@ -63,7 +89,9 @@ Lookup and picker contract
 --------------------------
 
 The resolver makes one storage-independent lookup call per attempt and owns
-refresh/retry behavior. A unique exact project name resolves through the index.
+refresh/retry behavior. An unavailable project cache is rebuilt before accepting
+a learned-directory match, so a weaker learned name cannot hide an exact
+registered project. A unique exact project name resolves through the index.
 A fuzzy query also considers learned directories. The first result window reads
 project usage history for ranking only when at least two entries match. Exact
 duplicates remain separate choices in the picker.

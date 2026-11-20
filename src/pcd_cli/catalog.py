@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from typing import Self, TYPE_CHECKING
 
 from pcd_cli.config import Config
-from pcd_cli.filesystem import ApplicationPaths, canonical_path
+from pcd_cli.filesystem import ApplicationPaths, canonical_path, file_lock
 from pcd_cli.history import UsageHistory
 from pcd_cli.models import ProjectSource, ProjectUsage
 from pcd_cli.scanner import ProjectScanner
@@ -60,8 +60,8 @@ class ProjectCatalog:
 
         paths = ApplicationPaths.resolve()
         return cls(
-            config=Config(paths.config),
-            cache=SQLiteProjectStore(paths.cache),
+            config=Config(paths.config, cache_path=paths.cache),
+            cache=SQLiteProjectStore(paths.cache, config_path=paths.config),
             history=UsageHistory(paths.history),
         )
 
@@ -138,7 +138,14 @@ class ProjectCatalog:
                 directory_entries=directories,
                 usage_for=candidate_usage,
             )
-        result = ProjectResolver(self.cache, self.refresh, self.history.load).resolve(
+
+        def has_configured_projects() -> bool:
+            settings = self.config.load()
+            return bool(settings.roots or settings.manual_projects)
+
+        result = ProjectResolver(
+            self.cache, self.refresh, self.history.load, has_configured_projects
+        ).resolve(
             request,
             refresh_on_miss=refresh_on_miss,
             usage=usage,
@@ -166,27 +173,50 @@ class ProjectCatalog:
 
     def refresh(self) -> list[Project]:
         """Rebuild the catalog from config and scan, then publish it to the cache."""
-        started_at_ns = time.time_ns()
-        projects = self._build_projects()
+        while True:
+            started_at_ns = time.time_ns()
+            settings = self.config.load()
+            projects = self._build_projects(settings)
+            published = self._publish(projects, settings, started_at_ns)
+            if published is None:
+                continue
+            if published:
+                return projects
+            latest = self.cache.load()
+            if latest is not None:
+                return latest
+            # A newer cache may disappear between rejection and this read.
+            # Keep the completed scan usable, provided its settings still apply.
+            with file_lock(self.config.path):
+                if self.config.load() == settings:
+                    return projects
 
-        if self.cache.save(projects, started_at_ns=started_at_ns):
-            return projects
+    def _publish(
+        self, projects: list[Project], settings: ProjectSettings, started_at_ns: int
+    ) -> bool | None:
+        # Lock order is always configuration -> cache. A writer which scanned
+        # old settings must rescan, even if its refresh started more recently.
+        from pcd_cli.storage import SQLiteProjectStore
 
-        latest = self.cache.load()
-        return projects if latest is None else latest
+        with file_lock(self.config.path):
+            cache = self.cache
+            if isinstance(cache, SQLiteProjectStore):
+                cache = cache.capture_configuration()
+            if self.config.load() != settings:
+                return None
+            published = cache.save(projects, started_at_ns=started_at_ns)
+            if isinstance(cache, SQLiteProjectStore) and not cache.configuration_matches():
+                # Editors are not obliged to acquire our lock. Persisting the
+                # verified stamp keeps disk readers safe; retry also protects
+                # the completed-scan fallback in the current lookup.
+                return None
+            return published
 
     def refresh_with_report(self) -> RefreshReport:
         """Rescan roots, persist the new snapshot, and diff it against the cache."""
-        started_at_ns = time.time_ns()
         previous = {project.path for project in discovered(self.cache.load() or ())}
-        projects = self._build_projects()
+        projects = self.refresh()
         current = {project.path for project in discovered(projects)}
-
-        if not self.cache.save(projects, started_at_ns=started_at_ns):
-            latest = self.cache.load()
-            if latest is not None:
-                return RefreshReport(added=0, removed=0, total=len(latest))
-
         return RefreshReport(
             added=len(current - previous),
             removed=len(previous - current),
@@ -214,11 +244,33 @@ class ProjectCatalog:
     def record_usage(self, project: Project) -> None:
         self.history.record(project.path)
 
+    def _refresh_after_change(self) -> None:
+        try:
+            self.refresh()
+        except OSError as exc:
+            raise self._partial_change_error(exc) from exc
+
+    @staticmethod
+    def _partial_change_error(exc: OSError) -> OSError:
+        return OSError(
+            "Configuration saved, but the project cache could not be rebuilt. "
+            "The next ordinary lookup retries; "
+            f"run `pcd refresh` after resolving the error: {exc}"
+        )
+
+    def _publish_after_change(
+        self, projects: list[Project], settings: ProjectSettings, started_at_ns: int
+    ) -> bool | None:
+        try:
+            return self._publish(projects, settings, started_at_ns)
+        except OSError as exc:
+            raise self._partial_change_error(exc) from exc
+
     def add_scan_root(self, root: Path) -> bool:
         if not self.config.add_root(root):
             return False
 
-        self.refresh()
+        self._refresh_after_change()
 
         return True
 
@@ -226,7 +278,7 @@ class ProjectCatalog:
         if not self.config.remove_root(root):
             return False
 
-        self.refresh()
+        self._refresh_after_change()
 
         return True
 
@@ -248,13 +300,13 @@ class ProjectCatalog:
         expected = replace(settings, manual_projects=(*settings.manual_projects, project))
         if committed != expected:
             # Configuration changed while scanning; the old snapshot is not safe to publish.
-            self.refresh()
+            self._refresh_after_change()
         else:
             projects.append(project)
             projects.sort(key=lambda item: (item.name.casefold(), str(item.path)))
-            if not self.cache.save(projects, started_at_ns=started_at_ns):
+            if not self._publish_after_change(projects, committed, started_at_ns):
                 # A newer refresh may not include this manual registration yet.
-                self.refresh()
+                self._refresh_after_change()
 
         return True
 
@@ -275,10 +327,10 @@ class ProjectCatalog:
                 projects.sort(key=lambda item: (item.name.casefold(), str(item.path)))
             committed = self.config.restore_project(project, manual=manual, expected=settings)
             if committed is not None:
-                if committed != restored or not self.cache.save(
-                    projects, started_at_ns=started_at_ns
+                if committed != restored or not self._publish_after_change(
+                    projects, committed, started_at_ns
                 ):
-                    self.refresh()
+                    self._refresh_after_change()
                 return True
             latest = self.config.load()
             if latest == settings or project.path not in latest.excluded_projects:
@@ -289,7 +341,7 @@ class ProjectCatalog:
         if not self.config.remove_project(path):
             return False
 
-        self.refresh()
+        self._refresh_after_change()
 
         return True
 
@@ -299,7 +351,7 @@ class ProjectCatalog:
             return self.remove_project(project.path)
         if not self.config.exclude_project(project.path):
             return False
-        self.refresh()
+        self._refresh_after_change()
         return True
 
     def find_parent_root(self, path: Path) -> Path | None:

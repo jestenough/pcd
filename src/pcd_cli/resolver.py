@@ -20,6 +20,7 @@ class ProjectResolver:
     store: ProjectStore
     refresh: Callable[[], list[Project]]
     load_usage: UsageLoader
+    has_configured_projects: Callable[[], bool]
 
     def resolve(
         self,
@@ -37,8 +38,10 @@ class ProjectResolver:
             return snapshot_usage
 
         result = self.store.lookup(request, history)
-        if result is None and (
-            request.directories is not None or request.directory_entries is not None
+        if (
+            result is None
+            and (request.directories is not None or request.directory_entries is not None)
+            and (not refresh_on_miss or not self.has_configured_projects())
         ):
             result = lookup_snapshot(MemorySnapshot(()), request, history)
         if result is not None and (result.total or not refresh_on_miss):

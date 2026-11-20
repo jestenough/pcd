@@ -7,10 +7,10 @@ import os
 import tempfile
 import time
 import zlib
-from contextlib import closing, contextmanager, ExitStack
-from dataclasses import dataclass
+from contextlib import closing, contextmanager, ExitStack, nullcontext
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Self, TYPE_CHECKING
 
 from pcd_cli.cache import (
     _CacheReadError,
@@ -158,6 +158,38 @@ class SQLiteSnapshot:
 @dataclass(frozen=True, slots=True)
 class SQLiteProjectStore:
     path: Path
+    config_path: Path | None = None
+    verified_config_stamp: str | None = None
+
+    def capture_configuration(self) -> Self:
+        """Bind publication to the config identity checked before the scan is accepted."""
+        return replace(self, verified_config_stamp=self._config_stamp())
+
+    def configuration_matches(self) -> bool:
+        return (
+            self.verified_config_stamp is None or self.verified_config_stamp == self._config_stamp()
+        )
+
+    def _legacy_current(self) -> bool:
+        if self.config_path is None:
+            return True
+        try:
+            changed = self.config_path.stat().st_mtime_ns
+        except FileNotFoundError:
+            return True
+        try:
+            return changed <= self.legacy_path.stat().st_mtime_ns
+        except FileNotFoundError:
+            return False
+
+    def _config_stamp(self) -> str:
+        if self.config_path is None:
+            return ""
+        try:
+            stat = self.config_path.stat()
+        except FileNotFoundError:
+            return "missing"
+        return repr((stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
 
     @property
     def legacy_path(self) -> Path:
@@ -168,8 +200,18 @@ class SQLiteProjectStore:
         return self.path.with_suffix(self.path.suffix + ".initialized")
 
     def _migrate(self) -> None:
+        if _exists(self.path) or _exists(self.initialized_path) or not _exists(self.legacy_path):
+            return
+        # Config mutations publish the initialization barrier under this lock.
+        # Keep that barrier check and legacy import on the same side of a write.
+        lock = nullcontext() if self.config_path is None else file_lock(self.config_path)
+        with lock:
+            current = self.capture_configuration()
+            current._import_legacy()
+
+    def _import_legacy(self) -> None:
         # Never resurrect legacy data after a SQLite snapshot has existed.
-        if _exists(self.path) or _exists(self.initialized_path):
+        if _exists(self.path) or _exists(self.initialized_path) or not self._legacy_current():
             return
         legacy = ProjectCache(self.legacy_path).snapshot()
         if legacy is not None:
@@ -222,6 +264,17 @@ class SQLiteProjectStore:
                 if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_ERROR:
                     raise _CacheReadError("Invalid SQLite cache schema") from exc
                 raise
+            if self.config_path is not None:
+                try:
+                    stamp = conn.execute(
+                        "SELECT stamp FROM configuration WHERE singleton=1"
+                    ).fetchall()
+                except sqlite3.DatabaseError as exc:
+                    if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_ERROR:
+                        raise _CacheReadError("Cache has no configuration stamp") from exc
+                    raise
+                if stamp != [(self._config_stamp(),)]:
+                    raise _CacheReadError("Cache belongs to a different configuration")
             yield SQLiteSnapshot(conn, int(generation), count)
 
     def inspect(self) -> list[Project]:
@@ -302,7 +355,7 @@ class SQLiteProjectStore:
         if request.mode is LookupMode.PREFIX:
             try:
                 if not _exists(self.path):
-                    if _exists(self.initialized_path):
+                    if _exists(self.initialized_path) or not self._legacy_current():
                         return None
                     legacy = ProjectCache(self.legacy_path).find_prefix(request.query)
                     if legacy is None:
@@ -410,6 +463,15 @@ class SQLiteProjectStore:
     def _write(self, connection: Connection, projects: Iterable[Project], generation: int) -> None:
         import sqlite3
 
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS configuration "
+            "(singleton INTEGER PRIMARY KEY CHECK (singleton=1), stamp TEXT NOT NULL)"
+        )
+        connection.execute("DELETE FROM configuration")
+        stamp = self.verified_config_stamp
+        if stamp is None:
+            stamp = self._config_stamp()
+        connection.execute("INSERT INTO configuration VALUES (1, ?)", (stamp,))
         connection.execute("DELETE FROM projects")
         connection.execute("DELETE FROM metadata")
         count = 0

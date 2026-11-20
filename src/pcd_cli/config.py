@@ -38,6 +38,7 @@ class InvalidConfigError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class Config:
     path: Path
+    cache_path: Path | None = None
 
     def load(self) -> ProjectSettings:
         import tomllib
@@ -203,8 +204,32 @@ class Config:
     def _write(self, document: TOMLDocument) -> None:
         import tomlkit
 
-        with atomic_write(self.path) as stream:
-            stream.write(tomlkit.dumps(document))
+        # Once configuration changes, a legacy snapshot cannot be assumed to
+        # describe it. Persist the existing cache initialization barrier first;
+        # a crash between TOML publication and refresh must not revive JSONL.
+        # cache_path is supplied by the catalog, keeping standalone config use
+        # independent of the cache location.
+        if self.cache_path is not None:
+            legacy = self.cache_path.with_name("projects.jsonl")
+            try:
+                legacy.stat()
+            except FileNotFoundError:
+                pass
+            else:
+                marker = self.cache_path.with_suffix(self.cache_path.suffix + ".initialized")
+                with atomic_write(marker) as stream:
+                    stream.write("1\n")
+        try:
+            with atomic_write(self.path) as stream:
+                stream.write(tomlkit.dumps(document))
+        except OSError as exc:
+            # atomic_write can fail after replace (e.g. directory fsync). Do not
+            # imply that the old settings were restored when the write raises.
+            raise OSError(
+                "Configuration may have been saved, but its write did not complete. "
+                "The next ordinary lookup retries the cache rebuild; "
+                f"run `pcd refresh` after resolving the error: {exc}"
+            ) from exc
 
 
 def _parse_document(text: str, path: Path) -> TOMLDocument:

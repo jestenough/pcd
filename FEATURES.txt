@@ -136,9 +136,10 @@ CONFIGURATION
 
     The top-level editor setting takes precedence over VISUAL, then EDITOR.
     For example, put `editor = "nvim"` before any TOML table header.
-    config edit does not rescan projects: validate and refresh after editing scan roots,
-    manual projects, or scan settings. Unknown keys, invalid types, duplicate paths,
-    and relative config paths are rejected; absolute paths and ~ are supported.
+    After a config edit, the next ordinary lookup or listing rebuilds the project
+    snapshot. Use config validate and refresh to check the change immediately.
+    Unknown keys, invalid types, duplicate paths, and relative config paths are
+    rejected. Absolute paths and ~ are supported.
 
 
 USAGE HISTORY
