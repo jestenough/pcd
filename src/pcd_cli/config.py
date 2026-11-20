@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeGuard
 
-import tomlkit
-
 from pcd_cli.filesystem import atomic_write, canonical_path, file_lock
 from pcd_cli.models import Project, ProjectSettings, ProjectSource
 
@@ -42,9 +40,21 @@ class Config:
     path: Path
 
     def load(self) -> ProjectSettings:
-        return _decode_settings(self._read().unwrap())
+        import tomllib
+
+        text = self._read_text()
+        if text is None:
+            return _decode_settings({})
+        try:
+            value = tomllib.loads(text)
+        except tomllib.TOMLDecodeError:
+            # Keep compatibility with documents accepted by the editing parser.
+            return _decode_settings(_parse_document(text, self.path).unwrap())
+        return _decode_settings(value)
 
     def effective_toml(self) -> str:
+        import tomlkit
+
         settings = self.load()
         document = _default_document()
         document["roots"] = [str(item) for item in settings.roots]
@@ -178,25 +188,37 @@ class Config:
             self._write(document)
             return _decode_settings(document.unwrap())
 
-    def _read(self) -> TOMLDocument:
+    def _read_text(self) -> str | None:
         try:
-            text = self.path.read_text(encoding="utf-8")
+            return self.path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            return _default_document()
+            return None
         except UnicodeDecodeError as exc:
             raise InvalidConfigError(f"Config is not valid UTF-8: {self.path}") from exc
 
-        try:
-            return tomlkit.parse(text)
-        except tomlkit.exceptions.ParseError as exc:
-            raise InvalidConfigError(f"Invalid TOML in {self.path}: {exc}") from exc
+    def _read(self) -> TOMLDocument:
+        text = self._read_text()
+        return _default_document() if text is None else _parse_document(text, self.path)
 
     def _write(self, document: TOMLDocument) -> None:
+        import tomlkit
+
         with atomic_write(self.path) as stream:
             stream.write(tomlkit.dumps(document))
 
 
+def _parse_document(text: str, path: Path) -> TOMLDocument:
+    import tomlkit
+
+    try:
+        return tomlkit.parse(text)
+    except tomlkit.exceptions.ParseError as exc:
+        raise InvalidConfigError(f"Invalid TOML in {path}: {exc}") from exc
+
+
 def _default_document() -> TOMLDocument:
+    import tomlkit
+
     document = tomlkit.document()
     document.add(tomlkit.comment("pcd-cli configuration"))
     document["roots"] = []

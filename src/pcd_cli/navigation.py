@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
@@ -67,12 +68,17 @@ def select_project(
 def project_completions(value: str) -> list[CompletionItem]:
     names: set[str] = set()
     completions: list[CompletionItem] = []
+    home = None
 
     for project in ProjectCatalog.create().completion_candidates(value):
         if project.name in names or terminal_text(project.name) != project.name:
             continue
+        if home is None:
+            home = Path.home()
         names.add(project.name)
-        completions.append(CompletionItem(project.name, help=format_path(project.display_path)))
+        completions.append(
+            CompletionItem(project.name, help=format_path(project.display_path, home=home))
+        )
 
     return completions
 

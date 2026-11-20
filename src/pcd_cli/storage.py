@@ -400,9 +400,10 @@ class SQLiteProjectStore:
         connection.execute("DELETE FROM projects")
         connection.execute("DELETE FROM metadata")
         count = 0
+        encode = json.JSONEncoder(ensure_ascii=False, separators=(",", ":")).encode
         try:
             for project in projects:
-                payload = json.dumps(
+                payload = encode(
                     {
                         "name": project.name,
                         "path": str(project.path),
@@ -413,8 +414,6 @@ class SQLiteProjectStore:
                             for item in project.discoveries
                         ],
                     },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
                 )
                 raw = payload.encode("utf-8")
                 connection.execute(

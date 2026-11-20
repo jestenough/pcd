@@ -54,8 +54,9 @@ def canonical_path(path: Path) -> Path:
     return path.expanduser().resolve(strict=False)
 
 
-def format_path(path: Path) -> str:
-    home = Path.home()
+def format_path(path: Path, *, home: Path | None = None) -> str:
+    if home is None:
+        home = Path.home()
     if not path.is_relative_to(home):
         return terminal_text(str(path))
 

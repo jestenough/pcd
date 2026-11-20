@@ -80,7 +80,7 @@ def cli(ctx: click.Context, project_name: str | None, resume: bool) -> None:
     if resume and project_name is None:
         raise click.UsageError("Use pcd PROJECT --resume or pcd --project NAME --resume")
 
-    if ctx.invoked_subcommand in ("shell", "doctor"):
+    if ctx.invoked_subcommand in ("shell", "doctor", "_visit"):
         return
 
     catalog = ProjectCatalog.create()

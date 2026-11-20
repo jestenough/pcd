@@ -37,7 +37,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
 """
 
 
-def measure(root: Path) -> dict[str, list[float]]:
+def measure(root: Path, *, phases: bool = False) -> dict[str, list[float]]:
     env = os.environ.copy()
     for key in tuple(env):
         if key.startswith(("PCD_", "_PCD_", "_ZO_")):
@@ -100,15 +100,48 @@ def measure(root: Path) -> dict[str, list[float]]:
         proc.stdin.close()
         if proc.wait(timeout=15):
             raise RuntimeError("Shell exited unsuccessfully")
+    if phases:
+        samples.update(measure_cli_phases(env, targets))
+    return samples
+
+
+def measure_cli_phases(env: dict[str, str], targets: list[Path]) -> dict[str, list[float]]:
+    """Time the two CLI invocations independently of the wrapper and its IPC."""
+    samples: dict[str, list[float]] = {"resolve": [], "record": []}
+    for index in range(24):
+        target = targets[index % len(targets)]
+        for phase, args, code in (
+            ("resolve", [target.name], 10),
+            ("record", ["_visit", "--project-only"], 0),
+        ):
+            start = time.perf_counter_ns()
+            result = subprocess.run(
+                ["pcd", *args],
+                cwd=target if phase == "record" else target.parent,
+                env=env | {"PCD_SHELL": "1"},
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            elapsed = (time.perf_counter_ns() - start) / 1e6
+            if result.returncode != code or result.stderr:
+                raise RuntimeError(f"{phase} failed: {result.returncode} {result.stderr}")
+            if phase == "resolve" and not Path(result.stdout.strip()).samefile(target):
+                raise RuntimeError("Resolved the wrong directory")
+            if index >= 3:
+                samples[phase].append(elapsed)
     return samples
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--phases", action="store_true", help="Also time lookup and visit recording."
+    )
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as directory:
-        samples = measure(Path(directory).resolve())
+        samples = measure(Path(directory).resolve(), phases=args.phases)
     result = {
         "platform": platform.platform(),
         "zoxide": subprocess.check_output(["zoxide", "--version"], text=True).strip(),

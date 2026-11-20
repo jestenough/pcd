@@ -198,3 +198,8 @@ exact-name jumps in one persistent shell. Timing includes the local pipe round
 trip and ends when the shell reports its working directory. Each tool makes
 six warm-up jumps and 42 measured jumps. Tool order alternates. Shell startup,
 prompt rendering, and interactive prompt hooks are outside the measured interval.
+
+Pass `--phases` to time the two native PCD processes separately after the
+shell measurements. The driver checks the resolver's destination and exit code
+and invokes the recorder from that destination. Each phase has three warm-ups
+and 21 measured calls. These timings exclude shell dispatch and directory changes.

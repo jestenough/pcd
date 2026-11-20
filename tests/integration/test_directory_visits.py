@@ -20,6 +20,23 @@ if TYPE_CHECKING:
     from pcd_cli.catalog import ProjectCatalog
 
 
+def test_project_only_visit_works_without_opening_catalog(
+    runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pcd_cli.catalog import ProjectCatalog
+    from pcd_cli.filesystem import ApplicationPaths
+
+    def unexpected_catalog() -> ProjectCatalog:
+        raise AssertionError("Recording a visit should not open the project catalog")
+
+    monkeypatch.setattr(ProjectCatalog, "create", staticmethod(unexpected_catalog))
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(cli, ["_visit", "--project-only"]).exit_code == 0
+    paths = ApplicationPaths.resolve()
+    assert UsageHistory(paths.history).load()[tmp_path.resolve()].count == 1
+    assert not paths.cache.exists()
+
+
 def test_tracking_survives_cache_loss_and_refresh(
     projects: ProjectCatalog, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

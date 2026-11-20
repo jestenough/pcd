@@ -20,7 +20,7 @@ jobs:
           python-version: "3.14"
       - run: python -m pip install .
       - run: cargo install zoxide --version 0.9.8 --locked --force
-      - run: python benchmarks/shell_jumps.py --output shell-jumps.json
+      - run: python benchmarks/shell_jumps.py --phases --output shell-jumps.json
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: shell-jumps-${{ matrix.os }}

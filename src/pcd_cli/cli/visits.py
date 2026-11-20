@@ -11,19 +11,18 @@ if TYPE_CHECKING:
 
 @click.command("_visit", hidden=True)
 @click.option("--project-only", is_flag=True)
-@click.pass_obj
-def visit(catalog: ProjectCatalog, project_only: bool) -> None:
+def visit(project_only: bool) -> None:
     """Record the shell's actual working directory after a successful change."""
+    from pcd_cli.config import Config
+    from pcd_cli.filesystem import ApplicationPaths
     from pcd_cli.visits import DirectoryVisits, is_excluded
 
     path = Path.cwd().resolve()
     try:
-        if is_excluded(path, catalog.config.load().excluded_projects):
+        paths = ApplicationPaths.resolve()
+        if is_excluded(path, Config(paths.config).load().excluded_projects):
             return
-        if project_only:
-            catalog.history.record(path)
-        else:
-            DirectoryVisits(catalog.history.path).record(path)
+        DirectoryVisits(paths.history).record(path, project_only=project_only)
     except OSError as exc:
         from pcd_cli.display import terminal_text
 

@@ -217,10 +217,11 @@ def _decode_project(entry: ProjectCacheEntry) -> Project:
     except ValueError as exc:
         raise _CacheReadError("Invalid project source") from exc
 
+    path = Path(entry["path"])
     return Project(
         name=entry["name"],
-        path=Path(entry["path"]),
-        display_path=Path(entry["display"]),
+        path=path,
+        display_path=path if entry["display"] == entry["path"] else Path(entry["display"]),
         source=source,
         discoveries=tuple(
             Discovery(Path(item["root"]), Path(item["display"])) for item in entry["discoveries"]
