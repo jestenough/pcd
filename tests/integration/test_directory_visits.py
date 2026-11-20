@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from typing import TYPE_CHECKING
@@ -18,6 +19,25 @@ if TYPE_CHECKING:
     from click.testing import CliRunner
 
     from pcd_cli.catalog import ProjectCatalog
+
+
+def test_visit_entrypoint_records_once_without_importing_click(
+    projects: ProjectCatalog, tmp_path: Path
+) -> None:
+    script = (
+        "import sys; from pcd_cli.entrypoint import main; main(); assert 'click' not in sys.modules"
+    )
+    for args in (["_visit", "--project-only"], ["_visit"]):
+        result = subprocess.run(
+            [sys.executable, "-c", script, *args],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        assert result.returncode == 0, result.stderr
+        assert not result.stdout and not result.stderr
+    assert projects.history.load()[tmp_path.resolve()].count == 2
 
 
 def test_project_only_visit_works_without_opening_catalog(

@@ -263,6 +263,21 @@ versus 177 ms. An 11-sample refresh comparison found a remaining regression
 against v0.2.8: 820 ms versus 779 ms for a wide root (+5.2%), and 882 ms
 versus 803 ms for repositories grouped under subdirectories (+9.8%).
 
+A local launcher comparison used one Windows machine, Python 3.15.2,
+the same checkout and the same warm SQLite database. Across 21 measured
+calls per operation, a fresh Python process running ``pass`` took 58 ms.
+A fresh process importing ``pcd_cli.cli`` took 309 ms including startup and
+exit. The default resolver process took 346 ms. In a separate in-process
+probe, warm exact lookup took about 1 ms and a committed project visit took
+83–89 ms. These independent medians cover different boundaries.
+
+The packaged launcher now routes the two ordinary ``_visit`` notifications
+directly to the existing history writer. Other argument forms, including
+help and completion, use Click. Alternating the old and new launchers reduced
+the median recorder call from 410 to 347 ms and the real PowerShell jump from
+770 to 733 ms. Separate runs of the end-to-end harness gave 774 and 769 ms;
+the smaller difference illustrates the sensitivity to run order and host load.
+
 Local validation of the SQLite implementation
 ---------------------------------------------
 

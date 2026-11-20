@@ -28,6 +28,22 @@ class Visit:
     preference: float
 
 
+def record_current_directory(*, project_only: bool) -> None:
+    import sys
+
+    from pcd_cli.config import Config
+    from pcd_cli.display import terminal_text
+    from pcd_cli.filesystem import ApplicationPaths
+
+    try:
+        path = Path.cwd().resolve()
+        paths = ApplicationPaths.resolve()
+        if not is_excluded(path, Config(paths.config).load().excluded_projects):
+            DirectoryVisits(paths.history).record(path, project_only=project_only)
+    except OSError as exc:
+        print(f"Warning: could not write usage history: {terminal_text(str(exc))}", file=sys.stderr)
+
+
 def is_excluded(path: Path, excluded_projects: frozenset[Path]) -> bool:
     if excluded_projects and (
         path in excluded_projects or any(parent in excluded_projects for parent in path.parents)

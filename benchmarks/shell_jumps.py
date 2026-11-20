@@ -7,6 +7,7 @@ import os
 import platform
 import statistics
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -107,16 +108,18 @@ def measure(root: Path, *, phases: bool = False) -> dict[str, list[float]]:
 
 def measure_cli_phases(env: dict[str, str], targets: list[Path]) -> dict[str, list[float]]:
     """Time the two CLI invocations independently of the wrapper and its IPC."""
-    samples: dict[str, list[float]] = {"resolve": [], "record": []}
+    samples: dict[str, list[float]] = {"python": [], "import_cli": [], "resolve": [], "record": []}
     for index in range(24):
         target = targets[index % len(targets)]
-        for phase, args, code in (
-            ("resolve", [target.name], 10),
-            ("record", ["_visit", "--project-only"], 0),
+        for phase, command, code in (
+            ("python", [sys.executable, "-c", "pass"], 0),
+            ("import_cli", [sys.executable, "-c", "import pcd_cli.cli"], 0),
+            ("resolve", ["pcd", target.name], 10),
+            ("record", ["pcd", "_visit", "--project-only"], 0),
         ):
             start = time.perf_counter_ns()
             result = subprocess.run(
-                ["pcd", *args],
+                command,
                 cwd=target if phase == "record" else target.parent,
                 env=env | {"PCD_SHELL": "1"},
                 text=True,

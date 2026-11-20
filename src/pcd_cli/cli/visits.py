@@ -13,20 +13,9 @@ if TYPE_CHECKING:
 @click.option("--project-only", is_flag=True)
 def visit(project_only: bool) -> None:
     """Record the shell's actual working directory after a successful change."""
-    from pcd_cli.config import Config
-    from pcd_cli.filesystem import ApplicationPaths
-    from pcd_cli.visits import DirectoryVisits, is_excluded
+    from pcd_cli.visits import record_current_directory
 
-    path = Path.cwd().resolve()
-    try:
-        paths = ApplicationPaths.resolve()
-        if is_excluded(path, Config(paths.config).load().excluded_projects):
-            return
-        DirectoryVisits(paths.history).record(path, project_only=project_only)
-    except OSError as exc:
-        from pcd_cli.display import terminal_text
-
-        click.echo(f"Warning: could not write usage history: {terminal_text(str(exc))}", err=True)
+    record_current_directory(project_only=project_only)
 
 
 @click.group("import")

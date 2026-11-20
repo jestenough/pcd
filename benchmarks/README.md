@@ -203,3 +203,6 @@ Pass `--phases` to time the two native PCD processes separately after the
 shell measurements. The driver checks the resolver's destination and exit code
 and invokes the recorder from that destination. Each phase has three warm-ups
 and 21 measured calls. These timings exclude shell dispatch and directory changes.
+The same run times an empty Python process and a fresh process importing
+the full PCD CLI with the benchmark interpreter. Both include process startup
+and exit. Install PCD in that interpreter's environment when comparing them.

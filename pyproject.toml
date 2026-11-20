@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pcd = "pcd_cli.cli:main"
+pcd = "pcd_cli.entrypoint:main"
 
 [build-system]
 requires = ["poetry-core==2.4.1"]

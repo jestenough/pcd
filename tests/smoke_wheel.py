@@ -82,6 +82,8 @@ def smoke_wheel(expected_version: str) -> None:
             assert run("shell", "init", "cmd", exit_code=1, stderr=error) == ""
         environment["PCD_SHELL"] = "1"
         assert run("repo", exit_code=10) == f"{repo}\n"
+        assert "--project-only" in run("_visit", "--help")
+        assert run("_visit", "--project-only") == ""
     print(f"Wheel smoke passed for pcd-cli {expected_version}")
 
 
