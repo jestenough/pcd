@@ -27,10 +27,12 @@ _COMMANDS = frozenset(
 
 def main() -> None:
     args = sys.argv[1:]
-    if args == ["--internal-shell-worker"] and not os.environ.get("_PCD_COMPLETE"):
+    if args in (["--internal-shell-worker"], ["--internal-bash-worker"]) and not os.environ.get(
+        "_PCD_COMPLETE"
+    ):
         from pcd_cli.shell_worker import serve
 
-        serve()
+        serve(bash=args == ["--internal-bash-worker"])
         return
 
     if args in (["_visit"], ["_visit", "--project-only"]) and not os.environ.get("_PCD_COMPLETE"):

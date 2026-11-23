@@ -1,9 +1,10 @@
-"""Line protocol for the PowerShell session's private child process."""
+"""Line protocols for a shell session's private child process."""
 
 import json
 import os
 import sqlite3
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from pcd_cli.config import InvalidConfigError
@@ -33,7 +34,20 @@ else:
         return False
 
 
-def serve() -> None:
+def _bash_requests() -> Iterator[bytes]:
+    import select
+
+    parent = os.getppid()
+    while os.getppid() == parent:
+        # Background jobs may have inherited the shell's write descriptor.
+        if select.select([sys.stdin], [], [], 30)[0]:
+            line = sys.stdin.buffer.readline()
+            if not line.endswith(b"\n"):
+                return
+            yield line
+
+
+def serve(*, bash: bool = False) -> None:
     writer: sqlite3.Connection | None = None
     current: Path | None = None
 
@@ -54,9 +68,12 @@ def serve() -> None:
 
     # ASCII JSON replies also work with Windows PowerShell's legacy encoding.
     try:
-        for line in sys.stdin.buffer:
+        for line in _bash_requests() if bash else sys.stdin.buffer:
             try:
-                operation, value, exclusions = json.loads(line.decode("utf-8-sig"))
+                if bash:
+                    operation, value, exclusions = os.fsdecode(line.removesuffix(b"\n")).split("\t")
+                else:
+                    operation, value, exclusions = json.loads(line.decode("utf-8-sig"))
                 if operation == "lookup":
                     result = ""
                     if value and not value.startswith("-") and value not in _COMMANDS:
@@ -90,7 +107,7 @@ def serve() -> None:
 
                 print(terminal_text(str(exc)), file=sys.stderr)
                 result = ""
-            print(json.dumps(result, ensure_ascii=True), flush=True)
+            print(result if bash else json.dumps(result, ensure_ascii=True), flush=True)
     finally:
         if writer is not None:
             writer.close()

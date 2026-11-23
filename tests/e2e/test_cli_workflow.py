@@ -369,3 +369,70 @@ def test_seven_project_jumps_then_five_tracked_visits(tmp_path: Path) -> None:
             timeout=60,
         )
         assert store.usage()[target].count == expected
+
+
+@pytest.mark.parametrize("failure", ["lookup", "before_visit", "after_commit"])
+def test_interactive_bash_worker_failure_records_once(tmp_path: Path, failure: str) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    env = _environment(tmp_path)
+    target = tmp_path / 'repo with "quotes"'
+    target.mkdir()
+    real = _pcd_executable()
+    subprocess.run([real, "add", str(target), "--name", "repo"], env=env, check=True)
+    shim = tmp_path / "pcd"
+    shim.write_text(
+        """#!/bin/bash
+if [[ $1 == --internal-bash-worker ]]; then
+    IFS= read -r line || exit 1
+    [[ $FAILURE != lookup ]] || exit 1
+    if [[ $FAILURE == before_visit ]]; then
+        exec 0<&-
+        printf '%s\\n' "$TARGET"
+        exit 1
+    fi
+    printf '%s\\n' "$TARGET"
+    IFS= read -r line || exit 1
+    cd -- "$TARGET" && "$REAL" _visit
+    exit 1
+fi
+printf '%s\\n' "$1" >> "$CALLS"
+exec "$REAL" "$@"
+""",
+        encoding="utf-8",
+    )
+    shim.chmod(0o700)
+    calls = tmp_path / "calls"
+    env.update(
+        PATH=f"{tmp_path}:{env['PATH']}",
+        REAL=str(real),
+        TARGET=str(target),
+        FAILURE=failure,
+        CALLS=str(calls),
+        PCD_BASH_WORKER="1",
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            "--noprofile",
+            "--norc",
+            "--noediting",
+            "-ic",
+            'eval "$(command pcd shell init bash --track-cd)"; pcd repo && '
+            '[[ "$PWD" == "$TARGET" ]] && _pcd_record_visit',
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    log = calls.read_text().splitlines()
+    assert log.count("repo") == int(failure == "lookup")
+    assert log.count("_visit") == int(failure != "after_commit")
+    assert ("visit acknowledgement lost" in result.stderr) == (failure == "after_commit")
+    (history,) = tmp_path.rglob("directories.sqlite3")
+    with closing(sqlite3.connect(history)) as db:
+        assert db.execute("SELECT path,count FROM visits").fetchall() == [(str(target), 1)]

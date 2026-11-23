@@ -7,6 +7,7 @@ from textwrap import dedent
 from typing import Literal
 
 from pcd_cli.integrations.shells.base import StartupDriver
+from pcd_cli.integrations.shells.bash_worker import worker_functions
 from pcd_cli.integrations.shells.common import (
     Shell,
     SHELL_CD_EXIT_CODE,
@@ -51,7 +52,7 @@ class UnixDriver(StartupDriver):
             return recorder(self.shell) + _fish()
 
         if self.shell is Shell.BASH:
-            return recorder(self.shell) + _posix("bash_source")
+            return recorder(self.shell) + worker_functions() + _posix("bash_source")
 
         if self.shell is Shell.ZSH:
             return recorder(self.shell) + _posix("zsh_source")
@@ -60,6 +61,7 @@ class UnixDriver(StartupDriver):
 
 
 def _posix(completion: Literal["bash_source", "zsh_source"]) -> str:
+    fast_jump = '_pcd_fast_jump "$@" && return 0' if completion == "bash_source" else ""
     wrapper = dedent(
         f"""\
         pcd() {{
@@ -70,6 +72,7 @@ def _posix(completion: Literal["bash_source", "zsh_source"]) -> str:
             fi
 
             local output code
+            {fast_jump}
             if output="$({SHELL_MODE_ENV}=1 command pcd "$@")"; then
                 code=0
             else

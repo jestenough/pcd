@@ -14,25 +14,6 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-# Only the two controlled ASCII names/paths in the fixture use this adapter.
-# It exercises the existing worker protocol, including the durable track reply.
-WORKER = r"""
-command pcd --internal-shell-worker <"$HOME/request" >"$HOME/reply" &
-worker_pid=$!
-exec 7>"$HOME/request" 8<"$HOME/reply"
-trap 'exec 7>&-; wait "$worker_pid"' EXIT
-pcd() {
-    local dest ack
-    printf '["lookup","%s",""]\n' "$1" >&7 && IFS= read -r dest <&8 || return 1
-    [[ "$dest" == "\"$BENCH_ROOT/$1\"" ]] || return 1
-    dest=${dest#\"}; dest=${dest%\"}
-    builtin cd -- "$dest" || return 1
-    printf '["track","%s",""]\n' "$PWD" >&7 && IFS= read -r ack <&8 || return 1
-    [[ "$ack" == '"ok"' ]] || return 1
-    _pcd_last_directory=$PWD
-}
-"""
-
 
 def prompt(proc: subprocess.Popen[bytes]) -> bytes:
     assert proc.stdout is not None
@@ -76,11 +57,10 @@ def measure(root: Path, mode: str) -> list[float]:
         if mode == "zoxide"
         else 'eval "$(command pcd shell init bash --track-cd)"'
     )
-    if mode == "worker":
-        for name in ("request", "reply"):
-            subprocess.run(["mkfifo", str(home / name)], check=True)
-        init += "\n" + WORKER
+    env["PCD_BASH_WORKER"] = "1" if mode == "worker" else "0"
     rc = home / "bench.rc"
+    if mode == "worker":
+        init += "\nPROMPT_COMMAND+='; if [[ $PWD != $BENCH_ROOT && -z ${_pcd_worker_active:-} ]]; then exit 91; fi'"
     rc.write_text(init + "\nPS1='@READY@${PWD}@END@'\n", encoding="utf-8")
     values = []
     with subprocess.Popen(
