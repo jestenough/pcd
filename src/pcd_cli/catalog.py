@@ -91,6 +91,7 @@ class ProjectCatalog:
         refresh_on_miss: bool = True,
         usage: Mapping[Path, ProjectUsage] | None = None,
         include_directories: bool = False,
+        allow_history_with_stale_catalog: bool = True,
     ) -> LookupResult:
         from pcd_cli.resolver import ProjectResolver
 
@@ -144,6 +145,7 @@ class ProjectCatalog:
         ).resolve(
             request,
             refresh_on_miss=refresh_on_miss,
+            allow_history_with_stale_catalog=allow_history_with_stale_catalog,
             usage=usage,
         )
         if history_revision is not None and result.generation >= 0:

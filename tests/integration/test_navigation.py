@@ -352,3 +352,55 @@ def test_completion_omits_names_with_terminal_or_protocol_controls(tmp_path: Pat
         for index, name in enumerate(names)
     )
     assert [item.value for item in navigation_module.project_completions("")] == ["safe"]
+
+
+def test_bash_worker_partial_lookup_and_picker_order(
+    projects: ProjectCatalog,
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from pcd_cli import shell_worker
+    from pcd_cli.visits import DirectoryVisits
+
+    target = tmp_path / "jump-alpha"
+    other = tmp_path / "jump-beta"
+    learned = tmp_path / "jump-gamma"
+    for path in (target, other, learned):
+        path.mkdir()
+    for path in (target, other):
+        assert runner.invoke(cli, ["add", str(path)]).exit_code == 0
+    visits = DirectoryVisits(projects.history.path)
+    visits.record(learned)
+    monkeypatch.setenv("PCD_EXCLUDE_DIRS", "")
+
+    def probe(query: str, exclusions: str = "") -> str:
+        line = f"lookup\t{query}\t{exclusions}\n".encode()
+        monkeypatch.setattr(shell_worker, "_bash_requests", lambda: iter([line]))
+        shell_worker.serve(bash=True)
+        return capsys.readouterr().out.rstrip("\n")
+
+    assert probe("alpha") == str(target.resolve())
+    assert probe("jpalh") == str(target.resolve())
+    assert probe("jpgmm") == str(learned.resolve())
+    assert probe("jpgmm", str(learned)) == ""
+    assert probe("jp") == ""
+
+    def pick(picker: ProjectPicker) -> Project:
+        # Equal text scores for alpha and gamma: the recorded visit wins the tie.
+        assert [p.path for p in picker.matches] == [
+            other.resolve(),
+            learned.resolve(),
+            target.resolve(),
+        ]
+        return picker.matches[1]
+
+    monkeypatch.setattr(ProjectPicker, "run", pick)
+    result = runner.invoke(cli, ["jp"], env={"PCD_SHELL": "1"})
+    assert result.exit_code == 10, result.exception
+    assert result.output.strip() == str(learned.resolve())
+
+    projects.cache.path.unlink()
+    assert probe("jpgmm") == ""
+    assert not projects.cache.path.exists()

@@ -117,8 +117,9 @@ new Command Prompt. CMD uses a wrapper plus a DOSKEY command in the current user
 AutoRun value, without changing PATH.
 
 Interactive Bash on Linux and macOS starts a private worker on demand for
-unique exact project names. It reuses the process for lookup and recording.
-Other matches use the normal CLI and picker. Set ``PCD_BASH_WORKER=0`` to
+exact names, substrings and subsequences. A single match opens directly.
+Multiple matches open the normal CLI picker in its usual ranking order.
+The worker also records successful direct jumps. Set ``PCD_BASH_WORKER=0`` to
 use the CLI for every jump. If lookup fails, the shell retries via the CLI.
 If the worker disappears after receiving a visit, Bash warns that its status
 is uncertain and skips the retry to avoid counting a committed visit twice.

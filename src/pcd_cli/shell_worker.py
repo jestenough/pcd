@@ -80,6 +80,20 @@ def serve(*, bash: bool = False) -> None:
                         paths = ApplicationPaths.resolve()
                         store = SQLiteProjectStore(paths.cache, config_path=paths.config)
                         target = store.unique_cached_path(value)
+                        if target is None and bash:
+                            from pcd_cli.catalog import ProjectCatalog
+                            from pcd_cli.lookup import LookupRequest
+
+                            os.environ["PCD_EXCLUDE_DIRS"] = exclusions or ""
+                            matches = ProjectCatalog.create().lookup(
+                                LookupRequest(value, limit=1),
+                                refresh_on_miss=False,
+                                include_directories=True,
+                                allow_history_with_stale_catalog=False,
+                            )
+                            # The foreground CLI owns refresh, the picker and its paging.
+                            if matches.total == 1:
+                                target = matches.matches[0].path
                         if target and target.is_dir() and str(target).isprintable():
                             result = str(target)
                 elif operation in ("project", "track") and Path(value).is_absolute():

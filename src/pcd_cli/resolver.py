@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pcd_cli.lookup import lookup_snapshot, MemorySnapshot
+from pcd_cli.lookup import lookup_snapshot, LookupResult, MemorySnapshot
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from pathlib import Path
 
-    from pcd_cli.lookup import LookupRequest, LookupResult, ProjectStore, UsageLoader
+    from pcd_cli.lookup import LookupRequest, ProjectStore, UsageLoader
     from pcd_cli.models import Project, ProjectUsage
 
 
@@ -27,6 +27,7 @@ class ProjectResolver:
         request: LookupRequest,
         *,
         refresh_on_miss: bool = True,
+        allow_history_with_stale_catalog: bool = True,
         usage: Mapping[Path, ProjectUsage] | None = None,
     ) -> LookupResult:
         snapshot_usage = usage
@@ -38,6 +39,13 @@ class ProjectResolver:
             return snapshot_usage
 
         result = self.store.lookup(request, history)
+        if (
+            result is None
+            and not refresh_on_miss
+            and not allow_history_with_stale_catalog
+            and self.has_configured_projects()
+        ):
+            return LookupResult([], 0)
         if (
             result is None
             and (request.directories is not None or request.directory_entries is not None)
