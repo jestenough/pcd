@@ -255,8 +255,8 @@ macOS / Bash      381.91        13.87              27.5x
 Windows / pwsh    376.17        28.15              13.4x
 ================  ============  =================  ==========
 
-The default PCD wrapper invokes the CLI to resolve the destination, then
-invokes it again to record the successful directory change. Profile both
+At that revision the default PCD wrapper invoked the CLI to resolve the destination, then
+invoked it again to record the successful directory change. Profile both
 invocations separately before attributing the timing gap to storage.
 
 Local Windows follow-up (Python 3.15.2, PowerShell 7)
@@ -541,3 +541,35 @@ covered Windows and Linux.
 To repeat the comparison against a single baseline with the repository harness::
 
     poetry run python benchmarks/compare_cli.py --baseline v0.2.8 --sizes 1000 --tree-sizes --operations exact-last --repeats 18 --output benchmarks/baselines/exact-1k.json
+
+
+Release preparation: shell jumps on master
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The `comparison at 28b88a6 <https://github.com/jestenough/pcd/actions/runs/45116960550>`_
+measured 42 warm exact-name jumps per tool between two directories on each
+runner. Windows used PowerShell 7 with the PCD session worker. Linux and
+macOS used Bash. All values are milliseconds.
+
+============  ==========  =============  =======  ==========
+Runner        PCD median  zoxide median  PCD p95  zoxide p95
+============  ==========  =============  =======  ==========
+Windows            33.07          30.62    35.96       37.92
+Linux             132.52           2.63   134.80        2.98
+macOS             111.64           6.26   162.60        8.28
+============  ==========  =============  =======  ==========
+
+
+The `interactive Bash comparison at 070d38c <https://github.com/jestenough/pcd/actions/runs/45126893952>`_
+timed 42 jumps between two registered directories through the next prompt,
+including history hooks. Each cell gives median / p95 in milliseconds.
+First jumps start after the initial prompt of a fresh shell.
+
+==================  =============  =============  ==============  ==============
+Query               Linux PCD      Linux zoxide   macOS PCD       macOS zoxide
+==================  =============  =============  ==============  ==============
+First exact         58.52 / 59.62  3.31 / 3.45    78.62 / 100.48  9.18 / 10.33
+Warm exact          2.69 / 2.77    3.24 / 3.38    4.08 / 6.29     9.35 / 11.56
+Warm substring      3.46 / 3.55    3.16 / 3.28    4.49 / 5.74     9.33 / 9.89
+Warm subsequence    3.41 / 3.49    No match       4.90 / 7.03     No match
+==================  =============  =============  ==============  ==============

@@ -56,22 +56,31 @@ DIRECTORY SELECTION
 PLATFORM CHECKS AND RELEASE FOLLOW-UP
 -------------------------------------
 
-    The master test matrix passed on Linux, macOS and Windows at 9a1679c.
-    Each Windows job (Python 3.12, 3.13 and 3.14) passed 639 tests, with no
-    symlink tests among the 22 skips. The macOS job passed with system Bash.
-    https://github.com/jestenough/pcd/actions/runs/44694333970
+    Before the Bash worker, CI at 28b88a6 passed on Linux,
+    macOS and Windows. The Windows recovery check preserved visit counts,
+    timestamps, zoxide preferences and --resume after catalog deletion, two
+    refreshes and a repeated import.
+    https://github.com/jestenough/pcd/actions/runs/45116918384
 
-    CLI comparisons against v0.2.8, JSONL/SQLite storage comparisons and
-    end-to-end shell jumps against zoxide 0.9.8 are complete on all three
-    platforms. See docs/storage-030.rst for timings, disk use and memory.
+    Bash worker on master at 070d38c: 42 timed jumps per scenario with
+    history enabled. Median / p95 in milliseconds (Linux, then macOS):
+    first exact jump 58.52 / 59.62 and 78.62 / 100.48; warm exact jump
+    2.69 / 2.77 and 4.08 / 6.29; substring 3.46 / 3.55 and 4.49 / 5.74;
+    subsequence 3.41 / 3.49 and 4.90 / 7.03. Ambiguous queries use the
+    foreground picker. First-jump timings start after the initial prompt.
+    https://github.com/jestenough/pcd/actions/runs/45126893952
 
-    Repeat the local Windows improvements on the hosted runners. Compare full
-    completion at 100k names, refresh and history reads against v0.2.8.
-    Local Windows refresh of 2,000 repositories still takes 5.2% longer
-    in a wide root and 9.8% longer in a grouped tree (11-sample medians).
-    Repeat the Windows visit-recording comparison in docs/storage-030.rst on
-    hosted runners. Measure resolution, post-cd recording and full shell jumps
-    separately. Keep the package at 0.2.8 pending release review.
+    Known regression for 0.3.0: on the Windows runner, refreshing 2,000 Git
+    repositories in groups of 25 took 615 ms versus 584 ms in v0.2.8
+    (+5.2%, seven-run medians; p90 673 vs 591 ms). In a flat root the
+    medians were 544 vs 549 ms. Track grouped refresh as a follow-up.
+    The same run covers history reads and completion of all 100,000 names.
+    https://github.com/jestenough/pcd/actions/runs/45119795590
+
+    Review the four navigation features above and the known Windows
+    regression in the release notes. Keep package metadata at 0.2.8 during
+    preparation. After release approval, bump once to 0.3.0, rebuild and
+    smoke-test the versioned wheel, then tag the verified release commit.
 
 
 DEFERRED IDEAS (UNSCHEDULED)

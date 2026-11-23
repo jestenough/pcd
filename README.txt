@@ -68,9 +68,11 @@ COMMON COMMANDS
 PERFORMANCE
 -----------
 With 100,000 registered projects, exact lookup took 119-161 ms across Linux,
-macOS and Windows (342-619 ms with v0.2.8). A real shell jump between two
-directories took 169-382 ms with pcd and 2-28 ms with zoxide. For the tested
-revisions, datasets and methodology, see docs/storage-030.rst.
+macOS and Windows (342-619 ms with v0.2.8). With history enabled, a warm exact Bash jump
+between two projects took 2.7 ms on Linux and 4.1 ms on macOS (medians).
+The first jump in a new Bash took 59 and 79 ms respectively. A unique
+substring match took 3.5 and 4.5 ms. See docs/storage-030.rst for p95,
+the zoxide comparison and separate PowerShell measurements.
 
 
 DOCUMENTATION
