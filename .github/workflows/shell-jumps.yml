@@ -21,7 +21,11 @@ jobs:
       - run: python -m pip install .
       - run: cargo install zoxide --version 0.9.8 --locked --force
       - run: python benchmarks/shell_jumps.py --phases --output shell-jumps.json
+      - if: runner.os != 'Windows'
+        run: python benchmarks/bash_prompt.py --output bash-prompt.json
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: shell-jumps-${{ matrix.os }}
-          path: shell-jumps.json
+          path: |
+            shell-jumps.json
+            bash-prompt.json
