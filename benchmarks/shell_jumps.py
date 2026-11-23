@@ -5,6 +5,8 @@ import contextlib
 import json
 import os
 import platform
+import shutil
+import sqlite3
 import statistics
 import subprocess
 import sys
@@ -36,6 +38,34 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     [Console]::WriteLine($PWD.Path)
 }
 """
+
+
+def warm_jump_phases(root: Path, env: dict[str, str]) -> dict[str, list[float]]:
+    script = root / "warm_jump_phases.ps1"
+    shutil.copyfile(Path(__file__).with_name(script.name), script)
+    (history,) = root.rglob("directories.sqlite3")
+    with contextlib.closing(sqlite3.connect(history)) as db:
+
+        def counts() -> dict[str, int]:
+            return dict(db.execute("SELECT path, count FROM visits"))
+
+        before = counts()
+        output = subprocess.check_output(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
+            cwd=root,
+            env=env,
+            text=True,
+            timeout=120,
+        )
+        after = counts()
+    for name in ("jump-alpha", "jump-beta"):
+        path = str(root / name)
+        if after.get(path, 0) - before.get(path, 0) != 24:
+            raise RuntimeError(f"Incorrect visit count for {name}")
+    rows = [json.loads(line) for line in output.splitlines()]
+    if len(rows) != 42:
+        raise RuntimeError("Incomplete warm PowerShell samples")
+    return {f"warm_{key}": [row[key] for row in rows] for key in rows[0]}
 
 
 def measure(root: Path, *, phases: bool = False) -> dict[str, list[float]]:
@@ -102,6 +132,8 @@ def measure(root: Path, *, phases: bool = False) -> dict[str, list[float]]:
         if proc.wait(timeout=15):
             raise RuntimeError("Shell exited unsuccessfully")
     if phases:
+        if windows:
+            samples.update(warm_jump_phases(root, env))
         samples.update(measure_cli_phases(env, targets))
     return samples
 
