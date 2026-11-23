@@ -29,7 +29,7 @@ def prompt(proc: subprocess.Popen[bytes]) -> bytes:
     return bytes(data)
 
 
-def measure(root: Path, mode: str) -> list[float]:
+def measure(root: Path, mode: str, scenario: str = "exact") -> list[float]:
     root.mkdir()
     home = root / "home"
     home.mkdir()
@@ -62,37 +62,58 @@ def measure(root: Path, mode: str) -> list[float]:
     if mode == "worker":
         init += "\nPROMPT_COMMAND+='; if [[ $PWD != $BENCH_ROOT && -z ${_pcd_worker_active:-} ]]; then exit 91; fi'"
     rc.write_text(init + "\nPS1='@READY@${PWD}@END@'\n", encoding="utf-8")
+    start_dir = root / "start"
+    start_dir.mkdir()
+    if mode == "worker":
+        # The first prompt precedes worker startup.
+        env["BENCH_ROOT"] = str(start_dir)
+    if scenario == "subsequence" and mode == "zoxide":
+        for query in ("jpalh", "jpbt"):
+            result = subprocess.run(
+                ["zoxide", "query", "--", query], env=env, cwd=start_dir, capture_output=True
+            )
+            if result.returncode != 1 or result.stdout:
+                raise RuntimeError(f"Unexpected zoxide match for {query}")
+        return []
     values = []
-    with subprocess.Popen(
-        ["bash", "--noprofile", "--rcfile", str(rc), "--noediting", "-i"],
-        env=env,
-        cwd=root,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    ) as proc:
-        assert proc.stdin is not None
-        try:
-            prompt(proc)
-            for i in range(48):
-                name = names[i % 2]
-                command = "z" if mode == "zoxide" else "pcd"
-                line = f"{command} {shlex.quote(name)}\n".encode()
-                start = time.perf_counter_ns()
-                proc.stdin.write(line)
-                proc.stdin.flush()
-                output = prompt(proc)
-                elapsed = (time.perf_counter_ns() - start) / 1e6
-                if not output.endswith(f"@READY@{root / name}@END@".encode()):
-                    raise RuntimeError(f"Wrong destination: {output!r}")
-                if i >= 6:
-                    values.append(elapsed)
-        finally:
-            proc.stdin.close()
+    sessions = 48 if scenario == "first" else 1
+    for session in range(sessions):
+        with subprocess.Popen(
+            ["bash", "--noprofile", "--rcfile", str(rc), "--noediting", "-i"],
+            env=env,
+            cwd=start_dir,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        ) as proc:
+            assert proc.stdin is not None
             try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+                prompt(proc)
+                for jump in range(48 // sessions):
+                    i = session + jump
+                    name = names[i % 2]
+                    command = "z" if mode == "zoxide" else "pcd"
+                    query = name
+                    if scenario == "substring":
+                        query = ("alpha", "beta")[i % 2]
+                    elif scenario == "subsequence":
+                        query = ("jpalh", "jpbt")[i % 2]
+                    line = f"{command} {shlex.quote(query)}\n".encode()
+                    start = time.perf_counter_ns()
+                    proc.stdin.write(line)
+                    proc.stdin.flush()
+                    output = prompt(proc)
+                    elapsed = (time.perf_counter_ns() - start) / 1e6
+                    if not output.endswith(f"@READY@{root / name}@END@".encode()):
+                        raise RuntimeError(f"Wrong destination: {output!r}")
+                    if i >= 6:
+                        values.append(elapsed)
+            finally:
+                proc.stdin.close()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
     if mode == "zoxide":
         listing = subprocess.check_output(
             ["zoxide", "query", "--list", "--score"], env=env, text=True
@@ -115,13 +136,32 @@ def measure(root: Path, mode: str) -> list[float]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--modes",
+        nargs="+",
+        choices=("pcd", "worker", "zoxide"),
+        default=["pcd", "worker", "zoxide"],
+    )
+    parser.add_argument(
+        "--scenarios",
+        nargs="+",
+        choices=("exact", "first", "substring", "subsequence"),
+        default=["exact"],
+    )
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as temp:
         data = {
-            mode: measure(Path(temp).resolve() / mode, mode) for mode in ("pcd", "worker", "zoxide")
+            (mode if scenario == "exact" else f"{mode}-{scenario}"): measure(
+                Path(temp).resolve() / f"{mode}-{scenario}", mode, scenario
+            )
+            for scenario in args.scenarios
+            for mode in args.modes
         }
     args.output.write_text(json.dumps(data, indent=2), encoding="utf-8")
     for mode, values in data.items():
+        if not values:
+            print(mode, "no matching directory")
+            continue
         print(mode, statistics.median(values), sorted(values)[math.ceil(0.95 * len(values)) - 1])
 
 

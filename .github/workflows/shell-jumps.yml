@@ -27,10 +27,22 @@ jobs:
           python -m pip install pytest
           python -m pytest -q tests/e2e/test_cli_workflow.py -k interactive_bash_worker_failure
       - if: runner.os != 'Windows'
-        run: python benchmarks/bash_prompt.py --output bash-prompt.json
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: master
+          path: baseline
+      - if: runner.os != 'Windows'
+        name: Compare master, session worker and zoxide through the Bash prompt
+        shell: bash
+        run: |
+          git -C baseline rev-parse HEAD
+          python -m venv --system-site-packages "$RUNNER_TEMP/master-env"
+          "$RUNNER_TEMP/master-env/bin/python" -m pip install --ignore-installed --no-deps ./baseline
+          PATH="$RUNNER_TEMP/master-env/bin:$PATH" python benchmarks/bash_prompt.py --modes pcd --scenarios exact first substring subsequence --output bash-prompt-master.json
+          python benchmarks/bash_prompt.py --modes worker zoxide --scenarios exact first substring subsequence --output bash-prompt.json
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: shell-jumps-${{ matrix.os }}
           path: |
             shell-jumps.json
-            bash-prompt.json
+            bash-prompt*.json
