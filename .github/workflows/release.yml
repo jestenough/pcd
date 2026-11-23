@@ -175,6 +175,10 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Download distributions
         uses: actions/download-artifact@v8.0.2
         with:
@@ -185,9 +189,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes=(--generate-notes)
+          file="docs/release-${GITHUB_REF_NAME#v}.md"
+          if [[ -f "$file" ]]; then
+            notes=(--notes-file "$file")
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             dist/* \
             --repo "${GITHUB_REPOSITORY}" \
             --verify-tag \
-            --generate-notes \
+            "${notes[@]}" \
             --title "${GITHUB_REF_NAME}"

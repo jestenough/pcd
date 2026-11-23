@@ -9,7 +9,7 @@ remains authoritative for roots and manual registrations. Persistent navigation
 history is migrated independently of the cache (see `storage and upgrades
 <configuration.rst#storage-and-upgrades>`_).
 
-The development build uses SQLite through Python's standard-library
+PCD 0.3.0 uses SQLite through Python's standard-library
 ``sqlite3`` module. Both SQLite and a custom indexed file accelerated exact
 lookup in the prototype comparison. SQLite was selected to keep transaction
 handling, reader isolation and on-disk indexing in a maintained database
@@ -83,7 +83,7 @@ downgrade to update that cache from current configuration. Do not run alternatin
 versions expecting their disposable caches to stay synchronized. Registered
 roots and manual projects remain available to both versions. After downgrade,
 the released version reads its old JSON history. Visits recorded in the newer
-SQLite database are available again when you return to the development build.
+SQLite database are available again when you return to 0.3.0.
 
 Lookup and picker contract
 --------------------------

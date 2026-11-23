@@ -1,74 +1,14 @@
 PCD ROADMAP
 ===========
 
-Current release: 0.2.8.
+Current package version: 0.3.0.
 
-0.3.0 - EVERYDAY DIRECTORY NAVIGATION
--------------------------------------
+Everyday directory navigation, SQLite storage and shell workers are included
+in 0.3.0. See docs/release-0.3.0.md for features and upgrade instructions,
+and docs/storage-030.rst for measurements.
 
-Ship all four tasks together in 0.3.0. Keep the package at 0.2.8 during
-development and bump it once when preparing the release.
-
-    1. Remember ordinary cd visits. Offer opt-in shell tracking, honor path exclusions,
-       and record each successful directory change once, including non-Git directories.
-       Keep visits across sessions and cache rebuilds. An unchanged working directory
-       should start zero extra processes at the next prompt.
-
-    2. Search by multiple words. Match ordered path components so that "pcd acme api"
-       finds the api checkout under acme. Rank ambiguous matches using visit frequency
-       and recency. Preserve deterministic jumps for unique exact project names.
-
-    3. Import zoxide history. Provide "pcd import zoxide --dry-run" to preview a merge.
-       Preserve relative preferences and keep repeated imports idempotent.
-
-    4. Resume work inside a project. "pcd PROJECT --resume" returns to the last
-       visited subdirectory of that project. If it disappeared, explain why and open
-       the project root. A plain "pcd PROJECT" continues to open the root.
-
-
-REFRESH AND CACHE RECOVERY
---------------------------
-
-    Refresh rebuilds the discovered project catalog from configured roots.
-    Vanished discoveries drop out. Roots, manual registrations and exclusions
-    survive even when their directories are temporarily unavailable.
-
-    Preserve learned directories, visit counts and timestamps, preferences
-    imported from zoxide, and each project's last visited subdirectory.
-    Verify this by deleting the project cache, running pcd refresh twice,
-    and checking that the same history, preferences and resume paths remain.
-
-
-DIRECTORY SELECTION
--------------------
-
-    pcd opens a unique exact project name directly, even when another directory
-    has more visits. Duplicate exact names open the picker. For a partial or
-    multi-word query, open a sole match directly and offer a picker for several.
-
-    Rank by match quality, then frequency and recency; use the canonical path
-    to break remaining ties consistently.
-
-    Canceling the picker or finding no match keeps the current directory and
-    history intact. Record a visit only after a successful directory change.
-
-
-PLATFORM CHECKS AND RELEASE FOLLOW-UP
--------------------------------------
-
-    Before the Bash worker, CI at 28b88a6 passed on Linux,
-    macOS and Windows. The Windows recovery check preserved visit counts,
-    timestamps, zoxide preferences and --resume after catalog deletion, two
-    refreshes and a repeated import.
-    https://github.com/jestenough/pcd/actions/runs/45116918384
-
-    Bash worker on master at 070d38c: 42 timed jumps per scenario with
-    history enabled. Median / p95 in milliseconds (Linux, then macOS):
-    first exact jump 58.52 / 59.62 and 78.62 / 100.48; warm exact jump
-    2.69 / 2.77 and 4.08 / 6.29; substring 3.46 / 3.55 and 4.49 / 5.74;
-    subsequence 3.41 / 3.49 and 4.90 / 7.03. Ambiguous queries use the
-    foreground picker. First-jump timings start after the initial prompt.
-    https://github.com/jestenough/pcd/actions/runs/45126893952
+PERFORMANCE FOLLOW-UP
+---------------------
 
     Known regression for 0.3.0: on the Windows runner, refreshing 2,000 Git
     repositories in groups of 25 took 615 ms versus 584 ms in v0.2.8
@@ -77,16 +17,10 @@ PLATFORM CHECKS AND RELEASE FOLLOW-UP
     The same run covers history reads and completion of all 100,000 names.
     https://github.com/jestenough/pcd/actions/runs/45119795590
 
-    Review the four navigation features above and the known Windows
-    regression in the release notes. Keep package metadata at 0.2.8 during
-    preparation. After release approval, bump once to 0.3.0, rebuild and
-    smoke-test the versioned wheel, then tag the verified release commit.
-
-
 DEFERRED IDEAS (UNSCHEDULED)
 ============================
 
-Revisit these after the four navigation priorities above.
+These ideas remain unscheduled after 0.3.0.
 
 PROJECT ALIASES
 ---------------

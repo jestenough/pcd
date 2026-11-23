@@ -77,6 +77,7 @@ the zoxide comparison and separate PowerShell measurements.
 
 DOCUMENTATION
 -------------
+    docs/release-0.3.0.md     Release highlights, upgrade notes and known limitation
     docs/usage.rst             All commands, search, and the project picker
     docs/shells.rst            Automatic/manual shell setup and migration
     docs/windows.rst           Execution Policy and Application Control errors
